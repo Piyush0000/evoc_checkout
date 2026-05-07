@@ -1,0 +1,24 @@
+# Dependencies
+node_modules/
+dist/
+
+# Environment / Secrets
+.env
+.env.*
+!.env.example
+
+# Local Databases (SQLite)
+*.db
+*.db-journal
+
+# Personal Learning & Logs
+daily_note/
+gotchas/
+*.log
+
+# Generated Files
+generated/
+
+# OS Metadata
+.DS_Store
+Thumbs.db

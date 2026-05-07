@@ -1,0 +1,63 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id               String            @id @default(uuid())
+  phone            String?           @unique
+  email            String?           @unique
+  firstName        String?
+  lastName         String?
+  address          String?
+  city             String?
+  state            String?
+  landmark         String?
+  pincode          String?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  checkoutSessions CheckoutSession[]
+}
+
+model CheckoutSession {
+  id             String        @id @default(uuid())
+  userId         String?       // Nullable: Start as anonymous
+  user           User?         @relation(fields: [userId], references: [id])
+  
+  // We store product details as a JSON snapshot. 
+  // This ensures that even if the merchant changes the price later, 
+  // the checkout price remains locked for this session.
+  items          Json          
+  totalAmount    Float
+  currency       String        @default("INR")
+  
+  status         SessionStatus @default(PENDING_AUTH)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  @@index([userId])
+}
+
+model OtpVerification {
+  id          String   @id @default(uuid())
+  phone       String
+  code        String
+  sessionId   String   // Tied to the specific checkout session
+  expiresAt   DateTime
+  createdAt   DateTime @default(now())
+
+  @@index([phone, code])
+}
+
+enum SessionStatus {
+  PENDING_AUTH
+  AUTHENTICATED
+  ADDRESS_CONFIRMED
+  PAYMENT_PENDING
+  COMPLETED
+  FAILED
+}
