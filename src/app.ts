@@ -14,11 +14,30 @@ const app: Express = express();
 
 app.use(helmet());
 app.use(cors());
+app.use(express.json());
+
 // Custom morgan token to log request body (sanitized)
 morgan.token('body', (req: Request) => {
-  if (Object.keys(req.body).length > 0) {
+  // In production, we avoid logging the body entirely for security and performance
+  if (process.env.NODE_ENV === 'production') {
+    return '';
+  }
+
+  if (req.body && Object.keys(req.body).length > 0) {
     const body = { ...req.body };
-    if (body.code) body.code = '******';
+    // Redact sensitive PII fields
+    const sensitiveFields = [
+      'code',
+      'phone',
+      'email',
+      'address',
+      'firstName',
+      'lastName',
+      'pincode',
+    ];
+    sensitiveFields.forEach((field) => {
+      if (body[field]) body[field] = '******';
+    });
     return chalk.gray(JSON.stringify(body));
   }
   return '';
@@ -40,7 +59,6 @@ morgan.token('method-bold', (req: Request) => {
 });
 
 app.use(morgan(':method-bold :url :status-color :res[content-length] - :response-time ms :body'));
-app.use(express.json());
 
 app.use('/api/v1/checkout', checkoutRoutes);
 app.use('/api/v1/auth', authRoutes);

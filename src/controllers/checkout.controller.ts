@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import { Prisma } from '../generated/prisma/client.js';
 import { prisma } from '../config/prisma.js';
 import { CreateSessionSchema, FinalizeSessionSchema } from '../schemas/checkout.schema.js';
 
@@ -7,18 +8,15 @@ export const initSession = async (req: Request, res: Response): Promise<void> =>
     const validatedData = CreateSessionSchema.parse(req.body);
     const { items, currency } = validatedData;
 
-    // Calculate total amount based on price, quantity and optional discount
+    // Calculate total amount based on price and quantity
     const totalAmount = items.reduce((acc, item) => {
-      const price = item.price;
-      const discount = item.discount || 0;
-      return acc + (price - discount) * item.quantity;
+      return acc + item.price * item.quantity;
     }, 0);
 
     // Create the session in the database
     const session = await prisma.checkoutSession.create({
       data: {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        items: items as any, // Snapshot of items at the time of checkout
+        items: items as Prisma.InputJsonValue, // Snapshot of items at the time of checkout
         totalAmount,
         currency,
         status: 'PENDING_AUTH',
@@ -57,8 +55,7 @@ export const getSessionSummary = async (req: Request, res: Response): Promise<vo
       return;
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const session = await (prisma.checkoutSession as any).findUnique({
+    const session = await prisma.checkoutSession.findUnique({
       where: { id: sessionId },
       include: { user: true },
     });

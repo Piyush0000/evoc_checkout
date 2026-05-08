@@ -4,12 +4,16 @@ export const CreateSessionSchema = z.object({
   items: z
     .array(
       z.object({
+        productId: z.string(), // ID from the external product service
+        variantId: z.string().optional(),
         sku: z.string(),
         name: z.string(),
+        variantName: z.string().optional(),
         price: z.number().positive(),
+        compareAtPrice: z.number().positive().optional(),
         quantity: z.number().int().positive(),
-        imageUrl: z.string().url().optional(),
-        discount: z.number().min(0).optional(),
+        image: z.string().url().optional(),
+        options: z.record(z.string(), z.string()).optional(),
       })
     )
     .min(1, 'At least one item is required'),

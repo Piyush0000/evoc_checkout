@@ -19,11 +19,11 @@ describe('User Profile Integration Tests', () => {
     const resA = await request(app)
       .post('/api/v1/checkout/init')
       .send({
-        items: [{ sku: 'P1', name: 'Product 1', price: 100, quantity: 1 }],
+        items: [
+          { productId: 'prod_A', sku: 'P1', name: 'Product 1', price: 100, quantity: 1 },
+        ],
         currency: 'INR',
       });
-
-    console.info('DEBUG - resA.body:', JSON.stringify(resA.body, null, 2));
 
     expect(resA.status).toBe(201);
     sessionA = resA.body.data.sessionId;
@@ -38,7 +38,9 @@ describe('User Profile Integration Tests', () => {
     const resB = await request(app)
       .post('/api/v1/checkout/init')
       .send({
-        items: [{ sku: 'P2', name: 'Product 2', price: 200, quantity: 1 }],
+        items: [
+          { productId: 'prod_B', sku: 'P2', name: 'Product 2', price: 200, quantity: 1 },
+        ],
         currency: 'INR',
       });
 

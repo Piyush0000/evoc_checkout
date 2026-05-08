@@ -1,3 +1,4 @@
+import { randomInt } from 'node:crypto';
 import { Request, Response } from 'express';
 import { prisma } from '../config/prisma.js';
 import { SendOtpSchema, VerifyOtpSchema } from '../schemas/auth.schema.js';
@@ -16,7 +17,7 @@ export const sendOtp = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+    const otpCode = randomInt(100000, 999999).toString();
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
 
     await prisma.otpVerification.create({
@@ -28,7 +29,11 @@ export const sendOtp = async (req: Request, res: Response): Promise<void> => {
       },
     });
 
-    console.info(`[AUTH] OTP for ${phone} (Session: ${sessionId}): ${otpCode}`);
+    // Only log the OTP in development for testing purposes.
+    // In production, this would be sent via SMS/Email and never logged.
+    if (process.env.NODE_ENV !== 'production') {
+      console.info(`[AUTH] OTP for ${phone} (Session: ${sessionId}): ${otpCode}`);
+    }
 
     res.status(200).json({
       success: true,

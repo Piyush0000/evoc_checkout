@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import { Prisma } from '../generated/prisma/client.js';
 import { prisma } from '../config/prisma.js';
 import { UpdateProfileSchema } from '../schemas/user.schema.js';
 
@@ -24,8 +25,7 @@ export const updateProfile = async (req: Request, res: Response): Promise<void> 
     // 2. Update the User profile (Permanent storage)
     const updatedUser = await prisma.user.update({
       where: { id: session.userId as string },
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      data: profileData as any,
+      data: profileData as Prisma.UserUpdateInput,
     });
 
     // 3. Update Session Status
