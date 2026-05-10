@@ -46,11 +46,11 @@ morgan.token('body', (req: Request) => {
 // Custom token for colorized status
 morgan.token('status-color', (_req: Request, res: Response) => {
   const status = res.statusCode;
-  if (status >= 500) return chalk.red(status);
-  if (status >= 400) return chalk.yellow(status);
-  if (status >= 300) return chalk.cyan(status);
-  if (status >= 200) return chalk.green(status);
-  return status.toString();
+  if (status >= 500) return chalk.red(String(status));
+  if (status >= 400) return chalk.yellow(String(status));
+  if (status >= 300) return chalk.cyan(String(status));
+  if (status >= 200) return chalk.green(String(status));
+  return String(status);
 });
 
 // Custom token for bold method

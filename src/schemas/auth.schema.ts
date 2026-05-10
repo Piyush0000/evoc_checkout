@@ -7,7 +7,7 @@ export const SendOtpSchema = z.object({
 
 export const VerifyOtpSchema = z.object({
   phone: z.string().regex(/^\+?[1-9]\d{1,14}$/, 'Invalid phone number format'),
-  code: z.string().length(6, 'OTP must be 6 digits'),
+  code: z.string().min(4, 'OTP must be at least 4 digits').max(6, 'OTP must be at most 6 digits'),
   sessionId: z.string().uuid('Invalid session ID'),
 });
 

@@ -1,0 +1,205 @@
+{
+  "info": {
+    "name": "Evoc Checkout API",
+    "description": "Full checkout workflow — run requests in order (Step 1 → 6). Session ID auto-propagates via collection variables.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:3000",
+      "type": "string"
+    },
+    {
+      "key": "store_id",
+      "value": "store_123",
+      "type": "string"
+    },
+    {
+      "key": "session_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "phone",
+      "value": "+919876543210",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Health Check",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/health",
+          "host": ["{{base_url}}"],
+          "path": ["health"]
+        }
+      }
+    },
+    {
+      "name": "Step 1 — Init Checkout Session",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const res = pm.response.json();",
+              "if (res.success && res.data && res.data.sessionId) {",
+              "  pm.collectionVariables.set('session_id', res.data.sessionId);",
+              "  console.log('✅ session_id saved:', res.data.sessionId);",
+              "}"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "x-store-id", "value": "{{store_id}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"items\": [\n    {\n      \"productId\": \"prod_trendy_001\",\n      \"sku\": \"CC-TSHIRT-BLK-M\",\n      \"name\": \"Classic Couture Black T-Shirt (M)\",\n      \"price\": 1299,\n      \"quantity\": 2,\n      \"image\": \"https://example.com/images/tshirt-black.jpg\"\n    },\n    {\n      \"productId\": \"prod_trendy_002\",\n      \"variantId\": \"var_slim_32\",\n      \"sku\": \"CC-JEANS-BLU-32\",\n      \"name\": \"Slim Fit Jeans\",\n      \"variantName\": \"Blue / 32\",\n      \"price\": 2499,\n      \"compareAtPrice\": 3499,\n      \"quantity\": 1,\n      \"image\": \"https://example.com/images/jeans-blue.jpg\",\n      \"options\": {\n        \"color\": \"Blue\",\n        \"size\": \"32\"\n      }\n    }\n  ],\n  \"currency\": \"INR\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/v1/checkout/init",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "checkout", "init"]
+        }
+      }
+    },
+    {
+      "name": "Step 2 — Send OTP",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "x-store-id", "value": "{{store_id}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"phone\": \"{{phone}}\",\n  \"sessionId\": \"{{session_id}}\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/v1/auth/otp/send",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "auth", "otp", "send"]
+        }
+      }
+    },
+    {
+      "name": "Step 3 — Verify OTP",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "x-store-id", "value": "{{store_id}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"phone\": \"{{phone}}\",\n  \"sessionId\": \"{{session_id}}\",\n  \"code\": \"REPLACE_WITH_OTP_FROM_SMS\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/v1/auth/otp/verify",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "auth", "otp", "verify"]
+        }
+      }
+    },
+    {
+      "name": "Step 4a — Update Profile (New Address)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "x-store-id", "value": "{{store_id}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"sessionId\": \"{{session_id}}\",\n  \"email\": \"divyansh@example.com\",\n  \"newAddress\": {\n    \"type\": \"HOME\",\n    \"firstName\": \"Divyansh\",\n    \"lastName\": \"Sharma\",\n    \"flatHouse\": \"B-204, Prestige Falcon City\",\n    \"areaStreet\": \"Kanakapura Road, Konanakunte\",\n    \"landmark\": \"Near Metro Station\",\n    \"receiversPhone\": \"+919876543210\",\n    \"city\": \"Bengaluru\",\n    \"state\": \"Karnataka\",\n    \"pincode\": \"560062\"\n  }\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/v1/user/profile",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "user", "profile"]
+        }
+      }
+    },
+    {
+      "name": "Step 4b — Update Profile (Existing Address)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "x-store-id", "value": "{{store_id}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"sessionId\": \"{{session_id}}\",\n  \"addressId\": \"REPLACE_WITH_ADDRESS_UUID_FROM_SUMMARY\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/v1/user/profile",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "user", "profile"]
+        }
+      }
+    },
+    {
+      "name": "Step 5 — Get Session Summary",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "x-store-id", "value": "{{store_id}}" }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/v1/checkout/summary/{{session_id}}",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "checkout", "summary", "{{session_id}}"]
+        }
+      }
+    },
+    {
+      "name": "Step 6a — Finalize (PayU)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "x-store-id", "value": "{{store_id}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"sessionId\": \"{{session_id}}\",\n  \"paymentMethod\": \"PayU\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/v1/checkout/finalize",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "checkout", "finalize"]
+        }
+      }
+    },
+    {
+      "name": "Step 6b — Finalize (Razorpay)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "x-store-id", "value": "{{store_id}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"sessionId\": \"{{session_id}}\",\n  \"paymentMethod\": \"Razorpay\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/v1/checkout/finalize",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "checkout", "finalize"]
+        }
+      }
+    }
+  ]
+}

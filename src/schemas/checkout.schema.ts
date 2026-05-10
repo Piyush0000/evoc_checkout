@@ -12,17 +12,17 @@ export const CreateSessionSchema = z.object({
         price: z.number().positive(),
         compareAtPrice: z.number().positive().optional(),
         quantity: z.number().int().positive(),
-        image: z.string().url().optional(),
+        image: z.string().optional(),
         options: z.record(z.string(), z.string()).optional(),
       })
     )
     .min(1, 'At least one item is required'),
-  currency: z.string().default('INR'),
+  currency: z.enum(['INR', 'USD']), // Enums are better than strings for fixed sets
 });
 
 export const FinalizeSessionSchema = z.object({
   sessionId: z.string().uuid('Invalid session ID'),
-  paymentMethod: z.enum(['CARD', 'UPI', 'NET_BANKING', 'COD', 'WALLET']),
+  paymentMethod: z.string().min(1, 'Payment method is required'),
 });
 
 export type CreateSessionInput = z.infer<typeof CreateSessionSchema>;
