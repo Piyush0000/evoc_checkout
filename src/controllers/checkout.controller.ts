@@ -65,10 +65,10 @@ export const initSession = async (req: Request, res: Response): Promise<void> =>
       },
     });
   } catch (error: unknown) {
-    if (error instanceof Error && error.name === 'ZodError') {
+    if (error instanceof ZodError) {
       res.status(400).json({
         success: false,
-        errors: (error as unknown as { errors: unknown }).errors,
+        errors: error.issues,
       });
       return;
     }
@@ -225,9 +225,17 @@ export const finalizeSession = async (req: Request, res: Response): Promise<void
     const customer = {
       firstName: session.address.firstName,
       lastName: session.address.lastName,
-      email: session.user.email || 'customer@example.com', // Fallback for PayU requirement
+      email: session.user.email,
       phone: session.user.phone || session.address.receiversPhone,
     };
+
+    if (!customer.email || !customer.phone) {
+      res.status(400).json({
+        success: false,
+        message: 'Customer email and phone are required for payment processing',
+      });
+      return;
+    }
 
     interface CartItem {
       name: string;

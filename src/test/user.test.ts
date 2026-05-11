@@ -11,8 +11,11 @@ describe('User Profile Integration Tests', () => {
 
   beforeEach(async () => {
     // Scoped cleanup to prevent race conditions and foreign key violations
+    const emailsToDelete = ['userA@example.com', 'prince@example.com'];
     const usersToDelete = await prisma.user.findMany({
-      where: { phone: { in: [phoneA, phoneB] } },
+      where: {
+        OR: [{ phone: { in: [phoneA, phoneB] } }, { email: { in: emailsToDelete } }],
+      },
     });
     const userIds = usersToDelete.map((u) => u.id);
     if (userIds.length > 0) {
@@ -97,6 +100,7 @@ describe('User Profile Integration Tests', () => {
       .set('x-store-id', storeId)
       .send({
         sessionId: sessionA,
+        email: 'prince@example.com',
         newAddress: {
           type: 'HOME',
           firstName: 'Prince',
@@ -124,6 +128,7 @@ describe('User Profile Integration Tests', () => {
       .set('x-store-id', storeId)
       .send({
         sessionId: sessionA,
+        email: 'prince@example.com',
         addressId: addressId,
       });
 

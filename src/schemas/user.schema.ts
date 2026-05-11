@@ -17,7 +17,7 @@ export const UpdateProfileSchema = z.object({
       pincode: z.string().regex(/^\d{6}$/, 'Pincode must be 6 digits'),
     })
     .optional(),
-  email: z.string().email('Invalid email address').optional(),
+  email: z.string().email('Invalid email address'),
 });
 
 export type UpdateProfileInput = z.infer<typeof UpdateProfileSchema>;

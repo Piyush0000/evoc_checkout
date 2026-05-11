@@ -40,7 +40,7 @@ export const sendOtp = async (req: Request, res: Response): Promise<void> => {
     const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes expiry
 
     // 2. Save the external session ID to our DB
-    console.debug(
+    console.info(
       `[DEBUG] Saving OTP verification: phone=${dbPhone}, sessionId=${sessionId}, providerSessionId=${providerSessionId}`
     );
     await safePrisma(() =>
@@ -98,7 +98,7 @@ export const verifyOtp = async (req: Request, res: Response): Promise<void> => {
 
     // 1. Find the OTP record to get the providerSessionId
     const dbPhone = OtpService.sanitizePhone(phone);
-    console.debug(`[DEBUG] Finding OTP record for phone: ${dbPhone}, sessionId: ${sessionId}`);
+    console.info(`[DEBUG] Finding OTP record for phone: ${dbPhone}, sessionId: ${sessionId}`);
     const otpRecord = await safePrisma(() =>
       prisma.otpVerification.findFirst({
         where: {
@@ -119,7 +119,7 @@ export const verifyOtp = async (req: Request, res: Response): Promise<void> => {
     }
 
     // 2. Verify with 2Factor API using the phone number method
-    console.debug(`[DEBUG] Verifying OTP with phone: ${dbPhone}, code: ${code}`);
+    console.info(`[DEBUG] Verifying OTP with phone: ${dbPhone}, code: ${code}`);
     const isVerified = await OtpService.verifyOtp(dbPhone, code);
 
     if (!isVerified) {

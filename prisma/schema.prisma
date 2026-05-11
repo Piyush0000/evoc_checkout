@@ -9,7 +9,7 @@ datasource db {
 
 model User {
   id               String            @id @default(uuid())
-  phone            String?           @unique
+  phone            String            @unique
   email            String?           @unique
   firstName        String?
   lastName         String?
