@@ -8,18 +8,20 @@ A high-performance, centralized checkout service built with **Express 5**, **Typ
 
 Unlike traditional checkouts that require login first, this service follows a **State-Machine Architecture**:
 
-1.  **Anonymous Initiation**: Storefronts create a session with a product snapshot (`PENDING_AUTH`).
-2.  **OTP Authentication**: Users verify their phone number, linking their identity to the session (`AUTHENTICATED`).
-3.  **Profile Persistence**: User addresses are saved centrally, enabling "1-click" style repeat checkouts (`ADDRESS_CONFIRMED`).
-4.  **Payment Intent**: The session is locked once a payment method is selected (`PAYMENT_PENDING`).
+1.  **Anonymous Initiation**: Storefronts create a session with a product snapshot (`PENDING_AUTH`). **Tenant isolation** is enforced via the `x-store-id` header.
+2.  **OTP Authentication**: Users verify their **mandatory phone number**, linking their identity to the session (`AUTHENTICATED`).
+3.  **Profile Persistence**: Users provide a **mandatory email** and shipping details. Addresses are saved centrally, enabling "1-click" style repeat checkouts (`ADDRESS_CONFIRMED`).
+4.  **Payment Intent**: The session is locked once a payment method is selected. Contact details are verified before creating gateway intents (`PAYMENT_PENDING`).
+5.  **Payment Verification (Webhook)**: Secure server-to-server callback verification (e.g., PayU Reverse Hashing) strictly validates the transaction, preventing amount or status tampering (`COMPLETED` or `FAILED`).
 
 ---
 
 ## 🛠 Tech Stack & Best Practices
 
-- **Prisma 7**: Uses the new **Driver Adapter** pattern (`@prisma/adapter-pg`) for high-performance PostgreSQL connections.
-- **Zod**: Strict schema validation for every incoming request.
-- **Vitest & Supertest**: Full integration test suite for the checkout funnel.
+- **Prisma 7**: Uses the **Driver Adapter** pattern (`@prisma/adapter-pg`) for high-performance PostgreSQL connections.
+- **Zod**: Strict schema validation for every incoming request, ensuring data integrity at the entry point.
+- **Security First**: Multi-layered defensive strategy including tenant isolation, cross-user data protection, and state-machine enforcement.
+- **Vitest & Supertest**: Comprehensive test suite covering happy paths, defensive security, and input validation.
 
 ---
 
@@ -32,42 +34,50 @@ src/
 ├── generated/    # Prisma Client (Custom output path for v7)
 ├── routes/       # API route definitions
 ├── schemas/      # Zod validation schemas
-├── test/         # Integration tests (Vitest)
-├── app.ts        # Express app definition (Logic layer)
-└── index.ts      # Server entry point (Environment layer)
+├── test/         # Integration tests (Happy Path, Security, Validation)
+├── utils/        # Shared utilities
+├── app.ts        # Express app definition (Middleware & Routes)
+└── index.ts      # Server entry point
 ```
 
 ---
 
 ## 🛣 API Reference
 
+### Mandatory Headers
+| Header | Description | Required |
+| :--- | :--- | :--- |
+| `x-store-id` | Unique identifier for the merchant storefront | **Yes** (All endpoints) |
+
 ### Checkout Flow
 | Method | Endpoint | Description | Status Transition |
 | :--- | :--- | :--- | :--- |
 | `POST` | `/api/v1/checkout/init` | Create a new session with items | `PENDING_AUTH` |
 | `GET` | `/api/v1/checkout/summary/:id` | Get full order & user details | - |
-| `POST` | `/api/v1/checkout/finalize` | Choose payment & lock session | `PAYMENT_PENDING` |
+| `POST` | `/api/v1/checkout/finalize` | Choose payment & verify contact info | `PAYMENT_PENDING` |
 
 ### Authentication
 | Method | Endpoint | Description |
 | :--- | :--- | :--- |
 | `POST` | `/api/v1/auth/otp/send` | Request a 6-digit code for a session |
-| `POST` | `/api/v1/auth/otp/verify` | Verify OTP and link User to Session |
+| `POST` | `/api/v1/auth/otp/verify` | Verify OTP and create/link User |
 
 ### User Profile
 | Method | Endpoint | Description | Status Transition |
 | :--- | :--- | :--- | :--- |
-| `POST` | `/api/v1/user/profile` | Update shipping address & email | `ADDRESS_CONFIRMED` |
+| `POST` | `/api/v1/user/profile` | Save mandatory email & shipping address | `ADDRESS_CONFIRMED` |
 
 ---
 
-## 💎 Prisma 101 for Contributors
+## 🛡 Security & Validation
 
-If you are new to Prisma, here is the essential workflow:
-
-*   **`pnpm prisma generate`**: Run this every time you change the `schema.prisma` file. It rebuilds your custom TypeScript SDK in `src/generated/prisma`.
-*   **`pnpm prisma migrate dev`**: Use this to sync your schema changes with the local PostgreSQL database. It creates a SQL migration file to keep your DB structure in sync.
-*   **`npx prisma studio`**: A powerful GUI to view and edit your database data directly in the browser.
+The service implements strict defensive boundaries:
+*   **Tenant Isolation**: All operations are scoped to the `x-store-id`. One store cannot access another's sessions.
+*   **Identity Integrity**: `phone` and `email` are mandatory. Payments are blocked if contact details are missing.
+*   **Data Ownership**: Users can only use address IDs belonging to their own account.
+*   **Address Deduplication**: The system prevents database bloat by querying for an exact identical address match before creating a new shipping profile.
+*   **State Locking**: Finalization is blocked unless the session has reached the `ADDRESS_CONFIRMED` state.
+*   **Webhook Verification**: Payment callbacks enforce strict reverse-hash calculations (with raw byte matching, avoiding `.trim()` mutations) to prevent spoofed or tampered payment callbacks.
 
 ---
 
@@ -83,7 +93,7 @@ If you are new to Prisma, here is the essential workflow:
     pnpm install
     ```
 2.  **Environment Setup**:
-    Configure your `DATABASE_URL` in `.env` (Format: `postgresql://user:pass@localhost:5432/evoc_checkout`).
+    Configure your `DATABASE_URL` in `.env`.
 3.  **Generate Prisma Client**:
     ```bash
     pnpm prisma generate
@@ -101,7 +111,7 @@ If you are new to Prisma, here is the essential workflow:
 
 ## ✅ Quality Control
 
-1.  **Testing**: Run the full suite (including unique constraint tests).
+1.  **Testing**: Run the full suite (Happy Path, Security, Validation).
     ```bash
     pnpm test
     ```
@@ -109,12 +119,3 @@ If you are new to Prisma, here is the essential workflow:
     ```bash
     pnpm lint && pnpm format
     ```
-
----
-
-## 🚢 Deployment Notes
-
-This project is optimized for **Prisma 7**. When deploying:
-- Ensure the environment supports the PostgreSQL Driver Adapter.
-- The Prisma Client is generated into `src/generated/prisma`. Ensure this path is included in your build artifacts.
-- Use `npx prisma migrate deploy` for production database updates.

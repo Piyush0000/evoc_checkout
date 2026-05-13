@@ -48,6 +48,7 @@ model CheckoutSession {
   totalAmount          Float
   currency             String        @default("INR")
   status               SessionStatus @default(PENDING_AUTH)
+  expiresAt            DateTime      @default(now()) // P2 FIX: Session expiry
   createdAt            DateTime      @default(now())
   updatedAt            DateTime      @updatedAt
   addressId            String?

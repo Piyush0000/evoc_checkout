@@ -35,71 +35,96 @@ export const updateProfile = async (req: Request, res: Response): Promise<void> 
       return;
     }
 
+    // P2 FIX: Expiry Check
+    if (session.expiresAt < new Date()) {
+      res.status(410).json({
+        success: false,
+        message: 'Checkout session has expired. Please start over.',
+      });
+      return;
+    }
+
     // 2. Tenant Isolation Check
     if (session.storeId !== storeIdFromHeader) {
       res.status(403).json({ success: false, message: 'Unauthorized' });
       return;
     }
 
-    let selectedAddressId = addressId;
+    // 3. Handle Address Logic and Profile Updates via Transaction (P1 FIX)
+    const { session: updatedSession } = await safePrisma(() =>
+      prisma.$transaction(async (tx) => {
+        let finalAddressId = addressId;
 
-    // 3. Handle Address Logic (New vs Existing)
-    if (newAddress) {
-      const createdAddress = await safePrisma(() =>
-        prisma.address.create({
-          data: {
-            ...newAddress,
-            landmark: newAddress.landmark ?? null,
-            userId: session.userId as string,
-          },
-        })
-      );
-      selectedAddressId = createdAddress.id;
-
-      // Bonus: If the user doesn't have a name saved globally, use the shipping name
-      if (!session.user?.firstName || !session.user?.lastName) {
-        await safePrisma(() =>
-          prisma.user.update({
-            where: { id: session.userId as string },
-            data: {
-              firstName: session.user?.firstName || newAddress.firstName,
-              lastName: session.user?.lastName || newAddress.lastName,
+        if (newAddress) {
+          // Check for existing identical address to prevent duplicates
+          const existingAddress = await tx.address.findFirst({
+            where: {
+              userId: session.userId as string,
+              firstName: newAddress.firstName,
+              lastName: newAddress.lastName,
+              flatHouse: newAddress.flatHouse,
+              areaStreet: newAddress.areaStreet,
+              city: newAddress.city,
+              state: newAddress.state,
+              pincode: newAddress.pincode,
+              receiversPhone: newAddress.receiversPhone,
+              landmark: newAddress.landmark ?? null,
             },
-          })
-        );
-      }
-    } else if (addressId) {
-      // Security Check: Verify that the addressId belongs to the user
-      const userAddresses = session.user?.addresses || [];
-      const belongsToUser = userAddresses.some((addr) => addr.id === addressId);
+          });
 
-      if (!belongsToUser) {
-        res.status(403).json({ success: false, message: 'Invalid address selection' });
-        return;
-      }
-    } else {
-      res.status(400).json({ success: false, message: 'Address is required' });
-      return;
-    }
+          if (existingAddress) {
+            finalAddressId = existingAddress.id;
+          } else {
+            const createdAddress = await tx.address.create({
+              data: {
+                ...newAddress,
+                landmark: newAddress.landmark ?? null,
+                userId: session.userId as string,
+              },
+            });
+            finalAddressId = createdAddress.id;
+          }
 
-    // 4. Update Global User Profile (Email)
-    if (email) {
-      await safePrisma(() =>
-        prisma.user.update({
-          where: { id: session.userId as string },
-          data: { email },
-        })
-      );
-    }
+          // Update user names if missing
+          if (!session.user?.firstName || !session.user?.lastName) {
+            await tx.user.update({
+              where: { id: session.userId as string },
+              data: {
+                firstName: session.user?.firstName || newAddress.firstName,
+                lastName: session.user?.lastName || newAddress.lastName,
+              },
+            });
+          }
+        } else if (addressId) {
+          // Security Check: Verify that the addressId belongs to the user
+          const userAddresses = session.user?.addresses || [];
+          const belongsToUser = userAddresses.some((addr) => addr.id === addressId);
 
-    // 5. Link Address to Session and Update Status
-    const updatedSession = await safePrisma(() =>
-      prisma.checkoutSession.update({
-        where: { id: sessionId },
-        data: {
-          addressId: selectedAddressId ?? null,
-          status: 'ADDRESS_CONFIRMED',
-        },
+          if (!belongsToUser) {
+            throw new Error('UNAUTHORIZED_ADDRESS');
+          }
+        } else {
+          throw new Error('ADDRESS_REQUIRED');
+        }
+
+        // Update Global User Profile (Email)
+        if (email) {
+          await tx.user.update({
+            where: { id: session.userId as string },
+            data: { email },
+          });
+        }
+
+        // Link Address to Session and Update Status
+        const updatedSession = await tx.checkoutSession.update({
+          where: { id: sessionId },
+          data: {
+            addressId: finalAddressId ?? null,
+            status: 'ADDRESS_CONFIRMED',
+          },
+        });
+
+        return { session: updatedSession };
       })
     );
 
@@ -110,9 +135,24 @@ export const updateProfile = async (req: Request, res: Response): Promise<void> 
         sessionStatus: updatedSession.status,
       },
     });
-  } catch (error: unknown) {
+  } catch (error: any) {
     if (error instanceof ZodError) {
       res.status(400).json({ success: false, errors: error.issues });
+      return;
+    }
+
+    if (error.message === 'UNAUTHORIZED_ADDRESS') {
+      res.status(403).json({ success: false, message: 'Invalid address selection' });
+      return;
+    }
+
+    if (error.message === 'ADDRESS_REQUIRED') {
+      res.status(400).json({ success: false, message: 'Address is required' });
+      return;
+    }
+
+    if (error.code === 'P2002' && error.meta?.target?.includes('email')) {
+      res.status(400).json({ success: false, message: 'This email is already associated with another account' });
       return;
     }
 

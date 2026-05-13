@@ -27,6 +27,15 @@ export const sendOtp = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
+    // P2 FIX: Expiry Check
+    if (session.expiresAt < new Date()) {
+      res.status(410).json({
+        success: false,
+        message: 'Checkout session has expired. Please start over.',
+      });
+      return;
+    }
+
     // Tenant Isolation Check
     if (session.storeId !== storeId) {
       res.status(403).json({ success: false, message: 'Unauthorized access to session' });
@@ -87,6 +96,15 @@ export const verifyOtp = async (req: Request, res: Response): Promise<void> => {
 
     if (!session) {
       res.status(404).json({ success: false, message: 'Checkout session not found' });
+      return;
+    }
+
+    // P2 FIX: Expiry Check
+    if (session.expiresAt < new Date()) {
+      res.status(410).json({
+        success: false,
+        message: 'Checkout session has expired. Please start over.',
+      });
       return;
     }
 
