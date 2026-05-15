@@ -250,6 +250,62 @@ export const finalizeSession = async (req: Request, res: Response): Promise<void
       return;
     }
 
+    // --- COD GUARDRAILS START ---
+    if (paymentMethod.toUpperCase() === 'COD') {
+      // 1. Address Sanity Check (Pincode & Phone)
+      const indianPincodeRegex = /^[1-9][0-9]{5}$/;
+      if (!indianPincodeRegex.test(session.address.pincode)) {
+        res.status(400).json({
+          success: false,
+          message: 'Invalid Pincode: COD requires a valid 6-digit Indian pincode for logistics.',
+        });
+        return;
+      }
+
+      const receiverPhoneDigits = session.address.receiversPhone.replace(/\D/g, '');
+      if (receiverPhoneDigits.length < 10) {
+        res.status(400).json({
+          success: false,
+          message:
+            'Invalid Receiver Phone: A valid 10-digit phone number is required for COD delivery.',
+        });
+        return;
+      }
+
+      // 2. Max COD Amount Cap
+      // Rationale: High-value orders have higher RTO (Return to Origin) costs.
+      const MAX_COD_AMOUNT = Number(process.env.MAX_COD_AMOUNT) || 5000;
+      if (session.totalAmount > MAX_COD_AMOUNT) {
+        res.status(400).json({
+          success: false,
+          message: `COD is not available for orders above ₹${MAX_COD_AMOUNT}. Please use an online payment method.`,
+        });
+        return;
+      }
+
+      // 3. RTO Risk Filter (Placeholder for Future Use)
+      /* 
+      // This block requires historical transaction data to be effective.
+      // Logic: If a user has more than 2 'FAILED' COD transactions in the last 30 days, block COD.
+      const failedCodCount = await prisma.transaction.count({
+        where: {
+          userId: session.userId,
+          paymentMethod: 'COD',
+          status: 'FAILED',
+          createdAt: { gt: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) }
+        }
+      });
+      if (failedCodCount >= 2) {
+        res.status(403).json({
+          success: false,
+          message: 'COD is currently disabled for your account due to previous delivery failures.'
+        });
+        return;
+      }
+      */
+    }
+    // --- COD GUARDRAILS END ---
+
     interface CartItem {
       name: string;
       price: number;
@@ -427,6 +483,15 @@ export const finalizeSession = async (req: Request, res: Response): Promise<void
  */
 export const handlePayUCallback = async (req: Request, res: Response): Promise<void> => {
   const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+  let gateway: PayUGateway;
+
+  try {
+    gateway = new PayUGateway();
+  } catch (initError) {
+    console.error('[PAYU_CALLBACK] Failed to initialize gateway:', initError);
+    res.redirect(`${frontendUrl}/checkout/failure?reason=config_error`);
+    return;
+  }
 
   try {
     // Merge query params and body to support both GET and POST callbacks
@@ -436,8 +501,6 @@ export const handlePayUCallback = async (req: Request, res: Response): Promise<v
     console.info(
       `[PAYU_CALLBACK] Received ${req.method} callback for TXN: ${txnid}, Status: ${status}`
     );
-
-    const gateway = new PayUGateway();
 
     // 1. Verify Reverse Hash
     const isHashValid = gateway.verifyResponseHash(payload);

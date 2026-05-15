@@ -70,25 +70,44 @@ export class PayUGateway implements IPaymentGateway {
   private paymentUrl: string;
 
   constructor() {
-    this.key = process.env.PAYU_KEY || process.env.TEST_PAYU_KEY || '';
-    this.salt = process.env.PAYU_SALT || process.env.TEST_PAYU_SALT || '';
+    const isProduction = process.env.NODE_ENV === 'production';
 
-    // Fix G: Warn loudly if callback URL is missing in production
+    // Strict Production Check: Throw error if live keys are missing
+    if (isProduction) {
+      if (!process.env.PAYU_KEY || !process.env.PAYU_SALT) {
+        throw new Error(
+          '[PAYU] ❌ CRITICAL: PAYU_KEY or PAYU_SALT is missing in production environment. ' +
+            'Payment processing is disabled for safety.'
+        );
+      }
+      this.key = process.env.PAYU_KEY;
+      this.salt = process.env.PAYU_SALT;
+    } else {
+      // Development Fallback
+      this.key = process.env.PAYU_KEY || process.env.TEST_PAYU_KEY || '';
+      this.salt = process.env.PAYU_SALT || process.env.TEST_PAYU_SALT || '';
+
+      if (!this.key || !this.salt) {
+        console.warn('[PAYU] ⚠️ Warning: PayU keys are missing. Set them in .env for testing.');
+      }
+    }
+
     const callbackUrl = process.env.PAYU_CALLBACK_URL;
-    if (!callbackUrl && process.env.NODE_ENV === 'production') {
+    if (!callbackUrl && isProduction) {
       console.error(
-        '[PAYU] ⚠️  CRITICAL: PAYU_CALLBACK_URL is not set in production! ' +
-          'All PayU callbacks will fail. Set this environment variable immediately.'
+        '[PAYU] ⚠️ CRITICAL: PAYU_CALLBACK_URL is not set in production! ' +
+          'Callbacks will default to localhost and likely fail. Set this variable immediately.'
       );
     }
-    this.surl = callbackUrl || 'http://localhost:3000/api/v1/checkout/payu/callback';
-    this.furl = callbackUrl || 'http://localhost:3000/api/v1/checkout/payu/callback';
 
-    // Production vs Test Endpoints
-    this.paymentUrl =
-      process.env.NODE_ENV === 'production'
-        ? 'https://secure.payu.in/_payment'
-        : 'https://test.payu.in/_payment';
+    // Default to local/relative path if not provided
+    const defaultCallback = 'http://localhost:3000/api/v1/checkout/payu/callback';
+    this.surl = callbackUrl || defaultCallback;
+    this.furl = callbackUrl || defaultCallback;
+
+    this.paymentUrl = isProduction
+      ? 'https://secure.payu.in/_payment'
+      : 'https://test.payu.in/_payment';
   }
 
   private generateHash(params: {
@@ -393,7 +412,7 @@ export class RazorpayGateway implements IPaymentGateway {
 export class CodGateway implements IPaymentGateway {
   async createIntent(
     amount: number,
-    currency: string,
+    _currency: string,
     customer: CustomerDetails,
     _productInfo: string
   ): Promise<PaymentIntent> {
