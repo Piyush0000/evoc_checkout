@@ -22,3 +22,7 @@ generated/
 # OS Metadata
 .DS_Store
 Thumbs.db
+
+# Development artifacts (Fix M)
+scratch.mjs
+payu-test-tool.html

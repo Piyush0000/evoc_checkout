@@ -1,5 +1,15 @@
 import crypto from 'crypto';
 
+/** Shape of a reconciliation API response */
+export interface ReconciliationResult {
+  status: number;
+  transaction_details?: Record<string, { status: string }>;
+  msg?: string;
+}
+
+/** Shape of a gateway callback payload (key-value pairs from form POST or query params) */
+export type PayloadRecord = Record<string, string | string[] | undefined>;
+
 /**
  * Payment Intent Response Structure
  * Every gateway must return at least a transaction ID.
@@ -23,15 +33,29 @@ export interface CustomerDetails {
 }
 
 /**
- * Common interface for all Payment Gateways
+ * Common interface for all Payment Gateways (Fix F)
+ * Includes callback verification contract for gateways with server-side callbacks.
  */
 export interface IPaymentGateway {
   createIntent(
     amount: number,
     currency: string,
     customer: CustomerDetails,
-    productInfo: string
+    productInfo: string,
+    paymentMethod?: string
   ): Promise<PaymentIntent>;
+
+  /**
+   * Verify the authenticity of a callback/webhook payload.
+   * Returns true if the hash/signature is valid.
+   */
+  verifyResponseHash(payload: PayloadRecord): boolean;
+
+  /**
+   * Verify a transaction via the gateway's reconciliation/verification API.
+   * This is the "source of truth" to confirm payment status.
+   */
+  verifyPaymentReconciliation(txnid: string): Promise<ReconciliationResult>;
 }
 
 /**
@@ -39,8 +63,8 @@ export interface IPaymentGateway {
  * Using Hosted Checkout / Web Checkout Pro logic
  */
 export class PayUGateway implements IPaymentGateway {
-  private key: string;
-  private salt: string;
+  readonly key: string;
+  readonly salt: string;
   private surl: string;
   private furl: string;
   private paymentUrl: string;
@@ -48,15 +72,23 @@ export class PayUGateway implements IPaymentGateway {
   constructor() {
     this.key = process.env.PAYU_KEY || process.env.TEST_PAYU_KEY || '';
     this.salt = process.env.PAYU_SALT || process.env.TEST_PAYU_SALT || '';
-    // PayU sends both success and failure to these URLs via POST
-    const callbackUrl = process.env.PAYU_CALLBACK_URL || 'http://localhost:3000/api/v1/checkout/payu/callback';
-    this.surl = callbackUrl;
-    this.furl = callbackUrl;
+
+    // Fix G: Warn loudly if callback URL is missing in production
+    const callbackUrl = process.env.PAYU_CALLBACK_URL;
+    if (!callbackUrl && process.env.NODE_ENV === 'production') {
+      console.error(
+        '[PAYU] ⚠️  CRITICAL: PAYU_CALLBACK_URL is not set in production! ' +
+          'All PayU callbacks will fail. Set this environment variable immediately.'
+      );
+    }
+    this.surl = callbackUrl || 'http://localhost:3000/api/v1/checkout/payu/callback';
+    this.furl = callbackUrl || 'http://localhost:3000/api/v1/checkout/payu/callback';
 
     // Production vs Test Endpoints
-    this.paymentUrl = process.env.NODE_ENV === 'production'
-      ? 'https://secure.payu.in/_payment'
-      : 'https://test.payu.in/_payment';
+    this.paymentUrl =
+      process.env.NODE_ENV === 'production'
+        ? 'https://secure.payu.in/_payment'
+        : 'https://test.payu.in/_payment';
   }
 
   private generateHash(params: {
@@ -86,11 +118,11 @@ export class PayUGateway implements IPaymentGateway {
 
     // Formula: sha512(key|txnid|amount|productinfo|firstname|email|udf1|udf2|udf3|udf4|udf5||||||SALT)
     const hashString = `${this.key}|${txnid}|${amount}|${productinfo}|${firstname}|${email}|${udf1}|${udf2}|${udf3}|${udf4}|${udf5}||||||${this.salt}`;
-    
+
     if (process.env.NODE_ENV !== 'production') {
       console.info(`[PAYU] Generating hash for TXN ${txnid}. (Salt hidden in production logs)`);
     }
-    
+
     return crypto.createHash('sha512').update(hashString).digest('hex');
   }
 
@@ -98,7 +130,8 @@ export class PayUGateway implements IPaymentGateway {
     amount: number,
     _currency: string,
     customer: CustomerDetails,
-    productInfo: string
+    productInfo: string,
+    paymentMethod?: string
   ): Promise<PaymentIntent> {
     const txnid = `txid_${crypto.randomBytes(12).toString('hex')}`;
     const amountStr = amount.toFixed(2);
@@ -111,34 +144,40 @@ export class PayUGateway implements IPaymentGateway {
       email: customer.email,
     });
 
-    // NOTE: For standard Hosted Checkout, we return the params for the frontend to POST.
-    // If you want UPI Intent specifically on mobile, the frontend uses these same params
-    // but adds pg='UPI' and bankcode='INTENT'.
+    // Build base params for Hosted Checkout
+    const additionalParams: Record<string, string> = {
+      key: this.key,
+      txnid,
+      amount: amountStr,
+      productinfo: productInfo,
+      firstname: customer.firstName,
+      lastname: customer.lastName,
+      email: customer.email,
+      phone: customer.phone,
+      udf1: '',
+      udf2: '',
+      udf3: '',
+      udf4: '',
+      udf5: '',
+      surl: this.surl,
+      furl: this.furl,
+      hash,
+      // Fix H: Removed legacy 'service_provider: payu_paisa' — not required by modern PayU
+    };
+
+    // Fix I: Add UPI Intent params when payment method is PAYU_INTENT
+    if (paymentMethod?.toUpperCase() === 'PAYU_INTENT') {
+      additionalParams.pg = 'UPI';
+      additionalParams.bankcode = 'INTENT';
+      console.info(`[PAYU] UPI Intent flow enabled for TXN ${txnid}`);
+    }
 
     return {
       id: txnid,
       clientSecret: hash,
       status: 'created',
       paymentUrl: this.paymentUrl,
-      additionalParams: {
-        key: this.key,
-        txnid,
-        amount: amountStr,
-        productinfo: productInfo,
-        firstname: customer.firstName,
-        lastname: customer.lastName,
-        email: customer.email,
-        phone: customer.phone,
-        udf1: '',
-        udf2: '',
-        udf3: '',
-        udf4: '',
-        udf5: '',
-        surl: this.surl,
-        furl: this.furl,
-        hash,
-        service_provider: 'payu_paisa',
-      },
+      additionalParams,
     };
   }
 
@@ -188,8 +227,8 @@ export class PayUGateway implements IPaymentGateway {
    * Step 1.4.1: Response verification using reverse hashing
    * Formula: sha512(SALT|status||||||udf5|udf4|udf3|udf2|udf1|email|firstname|productinfo|amount|txnid|key)
    */
-  verifyResponseHash(payload: Record<string, any>): boolean {
-    const getString = (value: any): string => {
+  verifyResponseHash(payload: PayloadRecord): boolean {
+    const getString = (value: string | string[] | undefined): string => {
       if (Array.isArray(value)) return String(value[0] ?? '');
       return value == null ? '' : String(value);
     };
@@ -241,7 +280,9 @@ export class PayUGateway implements IPaymentGateway {
     }
 
     if (process.env.NODE_ENV !== 'production') {
-      console.info(`[PAYU] Verifying reverse hash for TXN ${txnid}. (Salt hidden in production logs)`);
+      console.info(
+        `[PAYU] Verifying reverse hash for TXN ${txnid}. (Salt hidden in production logs)`
+      );
     }
 
     try {
@@ -262,15 +303,16 @@ export class PayUGateway implements IPaymentGateway {
    * Step 1.6: Verify the payment via Reconciliation API (v3 Transaction API)
    * This is the "Source of Truth" to verify if a payment actually happened.
    */
-  async verifyPaymentReconciliation(txnid: string): Promise<any> {
+  async verifyPaymentReconciliation(txnid: string): Promise<ReconciliationResult> {
     const command = 'verify_payment';
     // Formula: sha512(key|command|var1|salt)
     const hashString = `${this.key}|${command}|${txnid}|${this.salt}`;
     const hash = crypto.createHash('sha512').update(hashString).digest('hex');
 
-    const url = process.env.NODE_ENV === 'production' 
-      ? 'https://info.payu.in/merchant/postservice.php?form=2'
-      : 'https://test.payu.in/merchant/postservice.php?form=2';
+    const url =
+      process.env.NODE_ENV === 'production'
+        ? 'https://info.payu.in/merchant/postservice.php?form=2'
+        : 'https://test.payu.in/merchant/postservice.php?form=2';
 
     try {
       const response = await fetch(url, {
@@ -291,10 +333,12 @@ export class PayUGateway implements IPaymentGateway {
       }
 
       const data = await response.json();
-      
+
       // PayU Test environment often returns status: 0 for unknown txns
       if (data.status === 0 && process.env.NODE_ENV !== 'production') {
-        console.warn(`[PAYU] Reconciliation returned status 0 (Transaction not found). This is expected if you haven't actually paid on the PayU page yet.`);
+        console.warn(
+          `[PAYU] Reconciliation returned status 0 (Transaction not found). This is expected if you haven't actually paid on the PayU page yet.`
+        );
       }
 
       return data;
@@ -303,11 +347,11 @@ export class PayUGateway implements IPaymentGateway {
       throw error;
     }
   }
-
 }
 
 /**
  * Mock Razorpay Implementation
+ * Implements the full IPaymentGateway contract with stubs for callback methods.
  */
 export class RazorpayGateway implements IPaymentGateway {
   async createIntent(
@@ -324,6 +368,63 @@ export class RazorpayGateway implements IPaymentGateway {
       status: 'created',
     };
   }
+
+  verifyResponseHash(_payload: PayloadRecord): boolean {
+    // TODO: Implement Razorpay webhook signature verification
+    console.warn('[RAZORPAY] verifyResponseHash is not yet implemented');
+    return false;
+  }
+
+  async verifyPaymentReconciliation(_txnid: string): Promise<ReconciliationResult> {
+    // TODO: Implement Razorpay payment fetch API
+    console.warn('[RAZORPAY] verifyPaymentReconciliation is not yet implemented');
+    return { status: 0 };
+  }
+}
+
+/**
+ * Cash on Delivery "Gateway"
+ *
+ * Not a real payment gateway — no external API calls, no hash, no callback.
+ * The session transitions directly to COMPLETED when finalized with COD.
+ * This class exists so COD can flow through the same `IPaymentGateway` interface,
+ * keeping the controller code uniform.
+ */
+export class CodGateway implements IPaymentGateway {
+  async createIntent(
+    amount: number,
+    currency: string,
+    customer: CustomerDetails,
+    _productInfo: string
+  ): Promise<PaymentIntent> {
+    const orderId = `cod_${crypto.randomBytes(12).toString('hex')}`;
+
+    console.info(
+      `[COD] Order ${orderId} created for ${customer.firstName} — ₹${amount.toFixed(2)} (collect on delivery)`
+    );
+
+    return {
+      id: orderId,
+      status: 'succeeded', // COD is "confirmed" immediately
+      // No paymentUrl — no redirect needed
+      // No clientSecret — no hash verification needed
+    };
+  }
+
+  /**
+   * COD has no callback hash to verify.
+   */
+  verifyResponseHash(_payload: PayloadRecord): boolean {
+    return false;
+  }
+
+  /**
+   * COD has no reconciliation API.
+   */
+  async verifyPaymentReconciliation(_txnid: string): Promise<ReconciliationResult> {
+    console.warn('[COD] No reconciliation API for Cash on Delivery');
+    return { status: 0 };
+  }
 }
 
 /**
@@ -336,6 +437,8 @@ export class PaymentService {
         return new PayUGateway();
       case 'RAZORPAY':
         return new RazorpayGateway();
+      case 'COD':
+        return new CodGateway();
       default:
         throw new Error(`Unsupported gateway: ${gatewayName}`);
     }

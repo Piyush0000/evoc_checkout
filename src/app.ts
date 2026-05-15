@@ -11,6 +11,24 @@ import userRoutes from './routes/user.routes.js';
 
 dotenv.config({ override: true });
 
+// Fix N: Startup credential validation — fail fast with clear errors
+const requiredEnvVars = ['DATABASE_URL'];
+const missingVars = requiredEnvVars.filter((v) => !process.env[v]);
+if (missingVars.length > 0) {
+  console.error(`[STARTUP] ❌ Missing required environment variables: ${missingVars.join(', ')}`);
+  process.exit(1);
+}
+
+// PayU credentials: at least one set (test or prod) must be present
+const hasPayUKey = process.env.PAYU_KEY || process.env.TEST_PAYU_KEY;
+const hasPayUSalt = process.env.PAYU_SALT || process.env.TEST_PAYU_SALT;
+if (!hasPayUKey || !hasPayUSalt) {
+  console.warn(
+    '[STARTUP] ⚠️  PayU credentials not configured. Set PAYU_KEY/PAYU_SALT or TEST_PAYU_KEY/TEST_PAYU_SALT. ' +
+      'Payment hash generation will produce invalid results.'
+  );
+}
+
 const app: Express = express();
 
 // Security Middlewares

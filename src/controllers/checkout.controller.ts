@@ -109,6 +109,7 @@ export const getSessionSummary = async (req: Request, res: Response): Promise<vo
         include: {
           user: { include: { addresses: true } },
           address: true,
+          transaction: true,
         },
       })
     );
@@ -147,6 +148,7 @@ export const getSessionSummary = async (req: Request, res: Response): Promise<vo
             }
           : null,
         selectedAddress: session.address,
+        transaction: session.transaction,
       },
     });
   } catch (error: unknown) {
@@ -188,8 +190,18 @@ export const finalizeSession = async (req: Request, res: Response): Promise<void
       return;
     }
 
-    // Allow re-finalizing if already in PAYMENT_PENDING (to support retries)
-    if (session.status !== 'ADDRESS_CONFIRMED' && session.status !== 'PAYMENT_PENDING') {
+    // 3. Session Expiry Check (Fix D)
+    // Only block if the session is not already finalized
+    const isFinalized = session.status === 'COMPLETED' || session.status === 'PLACED';
+    if (!isFinalized && session.expiresAt < new Date()) {
+      res.status(410).json({
+        success: false,
+        message: 'Checkout session has expired. Please start over.',
+      });
+      return;
+    }
+
+    if (session.status !== 'ADDRESS_CONFIRMED') {
       res.status(400).json({
         success: false,
         message: 'Shipping address must be confirmed before proceeding to payment',
@@ -205,7 +217,7 @@ export const finalizeSession = async (req: Request, res: Response): Promise<void
       return;
     }
 
-    // 3. Fetch latest Merchant Config to get Gateway Strategy
+    // 4. Fetch latest Merchant Config to get Gateway Strategy
     const storeConfig = await MerchantService.getStoreConfig(session.storeId);
 
     // Find the specific gateway config or fallback
@@ -222,14 +234,12 @@ export const finalizeSession = async (req: Request, res: Response): Promise<void
       return;
     }
 
-    // 4. Prepare metadata for Gateway
-    const customerEmail = session.user.email ?? '';
-    const customerPhone = session.user.phone || session.address.receiversPhone;
+    // 5. Prepare metadata for Gateway
     const customer = {
       firstName: session.address.firstName,
       lastName: session.address.lastName,
-      email: customerEmail,
-      phone: customerPhone,
+      email: session.user.email as string, // Validated non-null below
+      phone: session.user.phone || session.address.receiversPhone,
     };
 
     if (!customer.email || !customer.phone) {
@@ -254,33 +264,124 @@ export const finalizeSession = async (req: Request, res: Response): Promise<void
       .join(', ')
       .substring(0, 100);
 
-    // 5. Create the Payment Intent
-    const gateway = PaymentService.getGateway(gatewayConfig.name);
-    
-    // Add UPI Intent support if specifically requested
-    if (paymentMethod.toUpperCase() === 'PAYU_INTENT') {
-      // In PayU, UPI Intent is often triggered by passing specific bankcode/pg
-      // For now, we'll just log that it's an intent flow.
-      console.info(`[CHECKOUT] Preparing PayU UPI Intent flow for TXN`);
-    }
-
-    const intent = await gateway.createIntent(
-      session.totalAmount,
-      session.currency,
-      customer,
-      productInfo
+    // 6. Atomically claim the session for finalization (race-condition guard).
+    // Two parallel finalize calls would otherwise both call the gateway and
+    // create duplicate transactions. updateMany returns count=1 only for the
+    // winner; the loser sees count=0 and aborts before any gateway side-effects.
+    const claim = await safePrisma(() =>
+      prisma.checkoutSession.updateMany({
+        where: { id: sessionId as string, status: 'ADDRESS_CONFIRMED' },
+        data: { status: 'PAYMENT_PENDING', paymentGateway: gatewayConfig.name },
+      })
     );
 
-    // 5. Update Session and Transition Status
-    const updatedSession = await safePrisma(() =>
-      prisma.checkoutSession.update({
-        where: { id: sessionId as string },
+    if (claim.count === 0) {
+      res.status(409).json({
+        success: false,
+        message: 'Session is already being finalized or is no longer in a finalizable state',
+      });
+      return;
+    }
+
+    // 7. Create the Payment Intent. If this throws, roll the session back so
+    // the user can retry without being stuck in PAYMENT_PENDING.
+    const gateway = PaymentService.getGateway(gatewayConfig.name);
+    let intent;
+    try {
+      intent = await gateway.createIntent(
+        session.totalAmount,
+        session.currency,
+        customer,
+        productInfo,
+        paymentMethod
+      );
+    } catch (gatewayError) {
+      await safePrisma(() =>
+        prisma.checkoutSession.update({
+          where: { id: sessionId as string },
+          data: { status: 'ADDRESS_CONFIRMED', paymentGateway: null },
+        })
+      );
+      throw gatewayError;
+    }
+
+    // 8. Branch: COD (immediate completion) vs Online Gateways (pending payment)
+    if (intent.status === 'succeeded') {
+      // COD path — no external payment page, no callback. Order is confirmed immediately.
+      const updatedSession = await safePrisma(() =>
+        prisma.$transaction(async (tx) => {
+          const sessionUpdate = await tx.checkoutSession.update({
+            where: { id: sessionId as string },
+            data: {
+              status: 'PLACED', // COD orders are "PLACED", not immediately "COMPLETED" (paid)
+              gatewayTransactionId: intent.id,
+            },
+          });
+
+          // Record the transaction in the permanent log
+          await tx.transaction.create({
+            data: {
+              sessionId: sessionUpdate.id,
+              storeId: sessionUpdate.storeId,
+              userId: sessionUpdate.userId,
+              amount: sessionUpdate.totalAmount,
+              currency: sessionUpdate.currency,
+              status: 'PENDING', // COD payment is pending until delivery
+              paymentMethod: 'COD',
+              paymentGateway: gatewayConfig.name,
+              gatewayTransactionId: intent.id,
+            },
+          });
+
+          return sessionUpdate;
+        })
+      );
+
+      res.status(200).json({
+        success: true,
+        message: 'Order placed successfully — Cash on Delivery',
         data: {
-          status: 'PAYMENT_PENDING',
+          sessionId: updatedSession.id,
+          status: updatedSession.status,
           paymentGateway: gatewayConfig.name,
           gatewayTransactionId: intent.id,
-          gatewayClientSecret: intent.clientSecret ?? null,
+          paymentMethod: 'COD',
         },
+      });
+      return;
+    }
+
+    // Online gateway path — record gateway IDs and create a PENDING transaction record
+    const updatedSession = await safePrisma(() =>
+      prisma.$transaction(async (tx) => {
+        const sessionUpdate = await tx.checkoutSession.update({
+          where: { id: sessionId as string },
+          data: {
+            gatewayTransactionId: intent.id,
+            gatewayClientSecret: intent.clientSecret ?? null,
+          },
+        });
+
+        await tx.transaction.upsert({
+          where: { sessionId: sessionUpdate.id },
+          update: {
+            status: 'PENDING',
+            gatewayTransactionId: intent.id,
+          },
+          create: {
+            sessionId: sessionUpdate.id,
+            storeId: sessionUpdate.storeId,
+            userId: sessionUpdate.userId,
+            amount: sessionUpdate.totalAmount,
+            currency: sessionUpdate.currency,
+            status: 'PENDING',
+            paymentMethod: 'ONLINE',
+            paymentGateway: gatewayConfig.name,
+            gatewayTransactionId: intent.id,
+          },
+        });
+
+        return sessionUpdate;
       })
     );
 
@@ -291,10 +392,9 @@ export const finalizeSession = async (req: Request, res: Response): Promise<void
         amount: session.totalAmount.toFixed(2),
         productinfo: productInfo,
         firstname: session.address.firstName,
-        email: customerEmail, // Using customerEmail directly for safety
+        email: session.user.email as string,
         status: 'success',
       });
-      console.info(`[CHECKOUT] Created PayU Intent: ${intent.id}. Debug callback payload generated.`);
     }
 
     res.status(200).json({
@@ -323,30 +423,19 @@ export const finalizeSession = async (req: Request, res: Response): Promise<void
 
 /**
  * Handler for PayU Success/Failure callbacks (surl/furl)
+ * Supports both POST (standard) and GET (mobile/3DS fallback) methods.
  */
 export const handlePayUCallback = async (req: Request, res: Response): Promise<void> => {
-  const frontendBaseUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+  const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+
   try {
-    const getString = (value: unknown): string => {
-      if (Array.isArray(value)) return String(value[0] ?? '');
-      return value == null ? '' : String(value);
-    };
-    const payload = {
-      ...(req.query as Record<string, unknown>),
-      ...(req.body as Record<string, unknown>),
-    };
-    const txnid = getString(payload.txnid).trim();
-    const status = getString(payload.status);
-    payload.txnid = txnid;
-    payload.status = status;
+    // Merge query params and body to support both GET and POST callbacks
+    const payload = { ...req.query, ...req.body };
+    const { txnid, status } = payload;
 
-    console.info(`[PAYU_CALLBACK] Received callback. Status: ${status}, TXN: "${txnid}"`);
-
-    if (!txnid) {
-      console.error('[PAYU_CALLBACK] Missing txnid in callback payload');
-      res.redirect(`${frontendBaseUrl}/checkout/failure?reason=missing_txnid`);
-      return;
-    }
+    console.info(
+      `[PAYU_CALLBACK] Received ${req.method} callback for TXN: ${txnid}, Status: ${status}`
+    );
 
     const gateway = new PayUGateway();
 
@@ -354,101 +443,153 @@ export const handlePayUCallback = async (req: Request, res: Response): Promise<v
     const isHashValid = gateway.verifyResponseHash(payload);
     if (!isHashValid) {
       console.error(`[PAYU_CALLBACK] Hash mismatch for TXN: ${txnid}`);
-      res.redirect(`${frontendBaseUrl}/checkout/failure?reason=hash_mismatch`);
+      res.redirect(`${frontendUrl}/checkout/failure?reason=hash_mismatch`);
       return;
     }
 
-    // 2. Find the session in our DB
-    const session = await safePrisma(() =>
-      prisma.checkoutSession.findFirst({
-        where: { gatewayTransactionId: txnid },
-      })
-    );
+    // 2. Atomic check-and-update in a transaction (Fix C — race condition)
+    const result = await safePrisma(() =>
+      prisma.$transaction(async (tx) => {
+        const session = await tx.checkoutSession.findFirst({
+          where: { gatewayTransactionId: txnid },
+        });
 
-    if (!session) {
-      console.error(`[PAYU_CALLBACK] Session not found for TXN: ${txnid}`);
-      res.redirect(`${frontendBaseUrl}/checkout/failure?reason=session_not_found`);
-      return;
-    }
-
-    // Idempotency Check: Don't process if already in a final state
-    if (session.status === 'COMPLETED' || session.status === 'FAILED') {
-      console.warn(`[PAYU_CALLBACK] TXN ${txnid} already processed with status ${session.status}`);
-      const redirectPath = session.status === 'COMPLETED' ? 'success' : 'failure';
-      res.redirect(`${frontendBaseUrl}/checkout/${redirectPath}?sessionId=${session.id}`);
-      return;
-    }
-
-    // 3. Amount Tampering Protection
-    const receivedAmount = parseFloat(getString(payload.amount));
-    const expectedAmount = session.totalAmount;
-
-    if (Math.abs(receivedAmount - expectedAmount) > 0.01) {
-      console.error(`[PAYU_CALLBACK] Amount mismatch for TXN: ${txnid}. Expected ${expectedAmount}, received ${receivedAmount}`);
-      await safePrisma(() =>
-        prisma.checkoutSession.update({
-          where: { id: session.id },
-          data: { status: 'FAILED' },
-        })
-      );
-      res.redirect(`${frontendBaseUrl}/checkout/failure?reason=amount_mismatch`);
-      return;
-    }
-
-    // 4. Optional Reconciliation (Step 1.6)
-    let reconciliationStatus = status;
-    try {
-      const reconData = await gateway.verifyPaymentReconciliation(txnid);
-      if (reconData.status === 1 && reconData.transaction_details?.[txnid]) {
-        const actualStatus = reconData.transaction_details[txnid].status.toLowerCase();
-        console.info(`[PAYU_CALLBACK] Reconciliation Status: ${actualStatus}`);
-        
-        // PayU reconciliation can return 'success' or 'captured' for completed payments
-        if (actualStatus === 'success' || actualStatus === 'captured') {
-          reconciliationStatus = 'success';
-        } else if (actualStatus === 'failure' || actualStatus === 'failed') {
-          reconciliationStatus = 'failure';
+        if (!session) {
+          return { error: 'session_not_found' as const };
         }
-      }
-    } catch (reconError) {
-      console.warn(`[PAYU_CALLBACK] Reconciliation failed (ignoring):`, reconError);
-    }
 
-    // 4. Update Session Status
-    const finalStatus = reconciliationStatus === 'success' ? 'COMPLETED' : 'FAILED';
+        // Idempotency Check: Don't process if already in a final state
+        if (
+          session.status === 'COMPLETED' ||
+          session.status === 'FAILED' ||
+          session.status === 'PLACED'
+        ) {
+          return { alreadyProcessed: true, session };
+        }
 
-    await safePrisma(() =>
-      prisma.checkoutSession.update({
-        where: { id: session.id },
-        data: {
-          status: finalStatus,
-          // Store mihpayid or other reference if needed
-          gatewayClientSecret: payload.mihpayid || session.gatewayClientSecret,
-        },
+        // Amount Tampering Protection
+        const receivedAmount = parseFloat(payload.amount);
+        const expectedAmount = session.totalAmount;
+
+        if (Math.abs(receivedAmount - expectedAmount) > 0.01) {
+          console.error(
+            `[PAYU_CALLBACK] Amount mismatch for TXN: ${txnid}. Expected ${expectedAmount}, received ${receivedAmount}`
+          );
+          const updated = await tx.checkoutSession.update({
+            where: { id: session.id },
+            data: { status: 'FAILED' },
+          });
+          return { amountMismatch: true, session: updated };
+        }
+
+        // Reconciliation API check
+        let reconciliationStatus = status;
+        try {
+          const reconData = await gateway.verifyPaymentReconciliation(txnid);
+          if (reconData.status === 1 && reconData.transaction_details?.[txnid]) {
+            const actualStatus = reconData.transaction_details[txnid].status;
+            console.info(`[PAYU_CALLBACK] Reconciliation Status: ${actualStatus}`);
+            if (actualStatus.toLowerCase() === 'success') {
+              reconciliationStatus = 'success';
+            } else if (actualStatus.toLowerCase() === 'failure') {
+              reconciliationStatus = 'failure';
+            }
+          }
+        } catch (reconError) {
+          // Fix J: In production, treat reconciliation failure as non-success
+          if (process.env.NODE_ENV === 'production') {
+            console.error(
+              `[PAYU_CALLBACK] Reconciliation failed in PRODUCTION for TXN ${txnid}. Marking as FAILED for safety.`,
+              reconError
+            );
+            reconciliationStatus = 'failure';
+          } else {
+            console.warn(
+              `[PAYU_CALLBACK] Reconciliation failed (using raw status in non-prod):`,
+              reconError
+            );
+          }
+        }
+
+        const finalStatus = reconciliationStatus === 'success' ? 'COMPLETED' : 'FAILED';
+        const finalTxnStatus = reconciliationStatus === 'success' ? 'SUCCESS' : 'FAILED';
+
+        // Update session
+        const updated = await tx.checkoutSession.update({
+          where: { id: session.id },
+          data: {
+            status: finalStatus as any,
+            gatewayPaymentId: (payload.mihpayid as string) || session.gatewayPaymentId,
+          },
+        });
+
+        // Update permanent transaction log
+        await tx.transaction.update({
+          where: { sessionId: session.id },
+          data: {
+            status: finalTxnStatus as any,
+            gatewayPaymentId: (payload.mihpayid as string) || session.gatewayPaymentId,
+            metadata: payload as Prisma.InputJsonValue,
+          },
+        });
+
+        return { session: updated, finalStatus, reconciliationStatus };
       })
     );
 
-    // 5. Redirect User or return JSON for API clients
-    const isJsonRequested = req.headers.accept?.includes('application/json');
-
-    if (isJsonRequested) {
-      res.status(finalStatus === 'COMPLETED' ? 200 : 400).json({
-        success: finalStatus === 'COMPLETED',
-        status: finalStatus,
-        sessionId: session.id,
-        reason: finalStatus === 'FAILED' ? status : undefined,
-      });
+    // Handle transaction results with redirects
+    if ('error' in result && result.error === 'session_not_found') {
+      console.error(`[PAYU_CALLBACK] Session not found for TXN: ${txnid}`);
+      res.redirect(`${frontendUrl}/checkout/failure?reason=session_not_found`);
       return;
+    }
+
+    if ('alreadyProcessed' in result && result.alreadyProcessed) {
+      console.warn(
+        `[PAYU_CALLBACK] TXN ${txnid} already processed with status ${result.session.status}`
+      );
+      const url =
+        result.session.status === 'COMPLETED'
+          ? `${frontendUrl}/checkout/success?sessionId=${result.session.id}`
+          : `${frontendUrl}/checkout/failure?sessionId=${result.session.id}`;
+      res.redirect(url);
+      return;
+    }
+
+    if ('amountMismatch' in result && result.amountMismatch) {
+      res.redirect(`${frontendUrl}/checkout/failure?reason=amount_mismatch`);
+      return;
+    }
+
+    // Normal completion
+    const {
+      session: updatedSession,
+      finalStatus,
+      reconciliationStatus,
+    } = result as {
+      session: { id: string };
+      finalStatus: string;
+      reconciliationStatus: string;
+    };
+
+    if (finalStatus === 'COMPLETED') {
+      console.info(
+        `[PAYU_CALLBACK] ✅ Transaction ${txnid} COMPLETED. Redirecting to success page.`
+      );
+    } else {
+      console.warn(
+        `[PAYU_CALLBACK] ❌ Transaction ${txnid} FAILED (${reconciliationStatus || status}). Redirecting to failure page.`
+      );
     }
 
     const redirectUrl =
       finalStatus === 'COMPLETED'
-        ? `${frontendBaseUrl}/checkout/success?sessionId=${session.id}`
-        : `${frontendBaseUrl}/checkout/failure?sessionId=${session.id}&reason=${status}`;
+        ? `${frontendUrl}/checkout/success?sessionId=${updatedSession.id}`
+        : `${frontendUrl}/checkout/failure?sessionId=${updatedSession.id}&reason=${reconciliationStatus || status}`;
 
     res.redirect(redirectUrl);
   } catch (error) {
     console.error('[PAYU_CALLBACK] Error processing callback:', error);
-    res.redirect(`${frontendBaseUrl}/checkout/failure?reason=internal_error`);
+    res.redirect(`${frontendUrl}/checkout/failure?reason=internal_error`);
   }
 };

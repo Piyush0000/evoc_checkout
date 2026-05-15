@@ -17,7 +17,10 @@ export interface MerchantConfig {
 export class MerchantService {
   /**
    * Fetches merchant configuration from an external specific backend.
-   * In a real app, this would be: await axios.get(`${MERCHANT_BACKEND_URL}/stores/${storeId}`);
+   *
+   * TODO(production): Replace this hardcoded mock with a real API call:
+   *   await axios.get(`${MERCHANT_BACKEND_URL}/stores/${storeId}`)
+   * Currently only 'store_123' is defined. Any other x-store-id will throw.
    */
   static async getStoreConfig(storeId: string): Promise<MerchantConfig> {
     console.info(`[MERCHANT_SERVICE] Fetching config for Store: ${storeId}`);
@@ -31,6 +34,12 @@ export class MerchantService {
         currency: 'INR',
         isActive: true,
         enabledGateways: [
+          {
+            name: 'COD',
+            type: 'COD',
+            image: 'https://cdn-icons-png.flaticon.com/512/2331/2331941.png',
+            description: 'Pay cash when your order is delivered',
+          },
           {
             name: 'Razorpay',
             type: 'UPI',

@@ -17,6 +17,7 @@ model User {
   updatedAt        DateTime          @updatedAt
   addresses        Address[]
   checkoutSessions CheckoutSession[]
+  transactions     Transaction[]
 }
 
 model Address {
@@ -48,12 +49,13 @@ model CheckoutSession {
   totalAmount          Float
   currency             String        @default("INR")
   status               SessionStatus @default(PENDING_AUTH)
-  expiresAt            DateTime      @default(now()) // P2 FIX: Session expiry
+  expiresAt            DateTime      @default(now())
   createdAt            DateTime      @default(now())
   updatedAt            DateTime      @updatedAt
   addressId            String?
   gatewayClientSecret  String?
-  gatewayTransactionId String?
+  gatewayTransactionId String?       @unique
+  gatewayPaymentId     String?
   paymentGateway       String?
   storeId              String
   address              Address?      @relation(fields: [addressId], references: [id])
@@ -61,6 +63,33 @@ model CheckoutSession {
 
   @@index([storeId])
   @@index([userId])
+  @@index([gatewayTransactionId])
+
+  transaction Transaction?
+}
+
+model Transaction {
+  id                   String            @id @default(uuid())
+  sessionId            String            @unique
+  storeId              String
+  userId               String?
+  amount               Float
+  currency             String            @default("INR")
+  status               TransactionStatus
+  paymentMethod        String            @default("ONLINE") // ONLINE, COD
+  paymentGateway       String?
+  gatewayTransactionId String?           @unique
+  gatewayPaymentId     String?
+  metadata             Json?
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
+
+  session CheckoutSession @relation(fields: [sessionId], references: [id])
+  user    User?           @relation(fields: [userId], references: [id])
+
+  @@index([storeId])
+  @@index([userId])
+  @@index([status])
 }
 
 model OtpVerification {
@@ -87,5 +116,14 @@ enum SessionStatus {
   ADDRESS_CONFIRMED
   PAYMENT_PENDING
   COMPLETED
+  PLACED // Specifically for COD or orders awaiting offline payment
   FAILED
+  EXPIRED
+}
+
+enum TransactionStatus {
+  PENDING
+  SUCCESS
+  FAILED
+  REFUNDED
 }

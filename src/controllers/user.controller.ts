@@ -50,6 +50,19 @@ export const updateProfile = async (req: Request, res: Response): Promise<void> 
       return;
     }
 
+    // Status guard: profile/address can only be edited before payment.
+    // Once the session has moved to PAYMENT_PENDING/COMPLETED/FAILED, it must not
+    // be reverted to ADDRESS_CONFIRMED — otherwise a known sessionId could be
+    // used to reopen a paid order.
+    const editableStatuses = ['PENDING_AUTH', 'AUTHENTICATED', 'ADDRESS_CONFIRMED'] as const;
+    if (!editableStatuses.includes(session.status as (typeof editableStatuses)[number])) {
+      res.status(409).json({
+        success: false,
+        message: `Profile cannot be edited once the session is in ${session.status} state`,
+      });
+      return;
+    }
+
     // 3. Handle Address Logic and Profile Updates via Transaction (P1 FIX)
     const { session: updatedSession } = await safePrisma(() =>
       prisma.$transaction(async (tx) => {
@@ -135,24 +148,27 @@ export const updateProfile = async (req: Request, res: Response): Promise<void> 
         sessionStatus: updatedSession.status,
       },
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     if (error instanceof ZodError) {
       res.status(400).json({ success: false, errors: error.issues });
       return;
     }
 
-    if (error.message === 'UNAUTHORIZED_ADDRESS') {
+    if (error instanceof Error && error.message === 'UNAUTHORIZED_ADDRESS') {
       res.status(403).json({ success: false, message: 'Invalid address selection' });
       return;
     }
 
-    if (error.message === 'ADDRESS_REQUIRED') {
+    if (error instanceof Error && error.message === 'ADDRESS_REQUIRED') {
       res.status(400).json({ success: false, message: 'Address is required' });
       return;
     }
 
-    if (error.code === 'P2002' && error.meta?.target?.includes('email')) {
-      res.status(400).json({ success: false, message: 'This email is already associated with another account' });
+    const prismaError = error as { code?: string; meta?: { target?: string[] } };
+    if (prismaError.code === 'P2002' && prismaError.meta?.target?.includes('email')) {
+      res
+        .status(400)
+        .json({ success: false, message: 'This email is already associated with another account' });
       return;
     }
 
