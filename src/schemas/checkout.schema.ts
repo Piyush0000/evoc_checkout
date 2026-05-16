@@ -17,7 +17,9 @@ export const CreateSessionSchema = z.object({
       })
     )
     .min(1, 'At least one item is required'),
-  currency: z.enum(['INR', 'USD']), // Enums are better than strings for fixed sets
+  currency: z.enum(['INR', 'USD']),
+  successUrl: z.string().url('Invalid success URL').optional(),
+  cancelUrl: z.string().url('Invalid cancel URL').optional(),
 });
 
 export const FinalizeSessionSchema = z.object({

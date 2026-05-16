@@ -34,7 +34,7 @@ export const initSession = async (req: Request, res: Response): Promise<void> =>
     }
 
     const validatedData = CreateSessionSchema.parse(req.body);
-    const { items } = validatedData;
+    const { items, successUrl, cancelUrl } = validatedData;
 
     // 3. Server-side Price Recalculation
     const totalAmount = items.reduce((acc, item) => {
@@ -50,6 +50,8 @@ export const initSession = async (req: Request, res: Response): Promise<void> =>
           totalAmount,
           currency: storeConfig.currency || 'INR',
           status: 'PENDING_AUTH',
+          successUrl,
+          cancelUrl,
           expiresAt: new Date(Date.now() + 10 * 60 * 1000), // 10 minutes expiry
         },
       })
@@ -499,7 +501,7 @@ export const finalizeSessionV2 = async (req: Request, res: Response): Promise<vo
  * Supports both POST (standard) and GET (mobile/3DS fallback) methods.
  */
 export const handlePayUCallback = async (req: Request, res: Response): Promise<void> => {
-  const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+  const defaultFrontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
 
   try {
     // Merge query params and body to support both GET and POST callbacks
@@ -514,7 +516,7 @@ export const handlePayUCallback = async (req: Request, res: Response): Promise<v
 
     if (!txnid) {
       console.error('[PAYU_CALLBACK] Missing txnid/txnId in payload:', JSON.stringify(payload));
-      res.redirect(`${frontendUrl}/checkout/failure?reason=missing_txnid`);
+      res.redirect(`${defaultFrontendUrl}/checkout/failure?reason=missing_txnid`);
       return;
     }
 
@@ -531,23 +533,52 @@ export const handlePayUCallback = async (req: Request, res: Response): Promise<v
 
     if (!sessionRecord) {
       console.error(`[PAYU_CALLBACK] Session not found for TXN: ${txnid}`);
-      res.redirect(`${frontendUrl}/checkout/failure?reason=session_not_found`);
+      res.redirect(`${defaultFrontendUrl}/checkout/failure?reason=session_not_found`);
       return;
     }
 
     const gatewayName = sessionRecord.paymentGateway || 'PAYU';
     const gateway = PaymentService.getGateway(gatewayName);
 
+    // Helper to build redirect URLs
+    const buildRedirectUrl = (
+      type: 'success' | 'failure' | 'cancel',
+      params: Record<string, string>
+    ) => {
+      let baseUrl = defaultFrontendUrl;
+      let path = `/checkout/${type}`;
+
+      if (type === 'success' && sessionRecord.successUrl) {
+        baseUrl = sessionRecord.successUrl;
+        path = ''; // successUrl already contains the full target
+      } else if ((type === 'failure' || type === 'cancel') && sessionRecord.cancelUrl) {
+        baseUrl = sessionRecord.cancelUrl;
+        path = '';
+      }
+
+      try {
+        const url = new URL(path, baseUrl);
+        Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
+        return url.toString();
+      } catch {
+        return `${defaultFrontendUrl}${path}?${new URLSearchParams(params).toString()}`;
+      }
+    };
+
     // 1. Verify Reverse Hash
     // Note: Some v2 flows might skip the browser-side hash if they are purely server-to-server,
     // but PayU Hosted Checkout usually still includes it.
     const isHashValid = gateway.verifyResponseHash(payload);
-    if (!isHashValid && process.env.NODE_ENV === 'production') {
+    const isProdOrTest = process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'test';
+
+    if (!isHashValid && (isProdOrTest || process.env.STRICT_HASH_CHECK === 'true')) {
       console.error(`[PAYU_CALLBACK] Hash mismatch for TXN: ${txnid}`);
-      res.redirect(`${frontendUrl}/checkout/failure?reason=hash_mismatch`);
+      res.redirect(buildRedirectUrl('failure', { reason: 'hash_mismatch' }));
       return;
     } else if (!isHashValid) {
-      console.warn(`[PAYU_CALLBACK] Hash mismatch for TXN: ${txnid} (Allowed in non-prod)`);
+      console.warn(
+        `[PAYU_CALLBACK] Hash mismatch for TXN: ${txnid} (Allowed in non-prod dev mode)`
+      );
     }
 
     // 2. Atomic check-and-update in a transaction (Fix C — race condition)
@@ -656,21 +687,18 @@ export const handlePayUCallback = async (req: Request, res: Response): Promise<v
 
     // Handle transaction results with redirects
     if ('error' in result && result.error === 'session_not_found') {
-      res.redirect(`${frontendUrl}/checkout/failure?reason=session_not_found`);
+      res.redirect(buildRedirectUrl('failure', { reason: 'session_not_found' }));
       return;
     }
 
     if ('alreadyProcessed' in result && result.alreadyProcessed) {
-      const url =
-        result.session.status === 'COMPLETED'
-          ? `${frontendUrl}/checkout/success?sessionId=${result.session.id}`
-          : `${frontendUrl}/checkout/failure?sessionId=${result.session.id}`;
-      res.redirect(url);
+      const type = result.session.status === 'COMPLETED' ? 'success' : 'failure';
+      res.redirect(buildRedirectUrl(type, { sessionId: result.session.id }));
       return;
     }
 
     if ('amountMismatch' in result && result.amountMismatch) {
-      res.redirect(`${frontendUrl}/checkout/failure?reason=amount_mismatch`);
+      res.redirect(buildRedirectUrl('failure', { reason: 'amount_mismatch' }));
       return;
     }
 
@@ -685,20 +713,21 @@ export const handlePayUCallback = async (req: Request, res: Response): Promise<v
       console.info(
         `[PAYU_CALLBACK] ✅ Transaction ${txnid} COMPLETED. Redirecting to success page.`
       );
+      res.redirect(buildRedirectUrl('success', { sessionId: typedResult.session.id }));
     } else {
       console.warn(
         `[PAYU_CALLBACK] ❌ Transaction ${txnid} FAILED (${typedResult.reconciliationStatus || status}). Redirecting to failure page.`
       );
+      const isCancelled = status.toLowerCase().includes('cancel');
+      res.redirect(
+        buildRedirectUrl(isCancelled ? 'cancel' : 'failure', {
+          sessionId: typedResult.session.id,
+          reason: typedResult.reconciliationStatus || status,
+        })
+      );
     }
-
-    const redirectUrl =
-      typedResult.finalStatus === 'COMPLETED'
-        ? `${frontendUrl}/checkout/success?sessionId=${typedResult.session.id}`
-        : `${frontendUrl}/checkout/failure?sessionId=${typedResult.session.id}&reason=${typedResult.reconciliationStatus || status}`;
-
-    res.redirect(redirectUrl);
   } catch (error) {
     console.error('[PAYU_CALLBACK] Error processing callback:', error);
-    res.redirect(`${frontendUrl}/checkout/failure?reason=internal_error`);
+    res.redirect(`${defaultFrontendUrl}/checkout/failure?reason=internal_error`);
   }
 };

@@ -57,6 +57,8 @@ model CheckoutSession {
   gatewayTransactionId String?       @unique
   gatewayPaymentId     String?
   paymentGateway       String?
+  successUrl           String?
+  cancelUrl            String?
   storeId              String
   address              Address?      @relation(fields: [addressId], references: [id])
   user                 User?         @relation(fields: [userId], references: [id])

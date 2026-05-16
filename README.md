@@ -45,26 +45,30 @@ src/
 ## 🛣 API Reference
 
 ### Mandatory Headers
-| Header | Description | Required |
-| :--- | :--- | :--- |
+
+| Header       | Description                                   | Required                |
+| :----------- | :-------------------------------------------- | :---------------------- |
 | `x-store-id` | Unique identifier for the merchant storefront | **Yes** (All endpoints) |
 
 ### Checkout Flow
-| Method | Endpoint | Description | Status Transition |
-| :--- | :--- | :--- | :--- |
-| `POST` | `/api/v1/checkout/init` | Create a new session with items | `PENDING_AUTH` |
-| `GET` | `/api/v1/checkout/summary/:id` | Get full order & user details | - |
-| `POST` | `/api/v1/checkout/finalize` | Choose payment & verify contact info | `PAYMENT_PENDING` |
+
+| Method | Endpoint                       | Description                          | Status Transition |
+| :----- | :----------------------------- | :----------------------------------- | :---------------- |
+| `POST` | `/api/v1/checkout/init`        | Create a new session with items      | `PENDING_AUTH`    |
+| `GET`  | `/api/v1/checkout/summary/:id` | Get full order & user details        | -                 |
+| `POST` | `/api/v1/checkout/finalize`    | Choose payment & verify contact info | `PAYMENT_PENDING` |
 
 ### Authentication
-| Method | Endpoint | Description |
-| :--- | :--- | :--- |
-| `POST` | `/api/v1/auth/otp/send` | Request a 6-digit code for a session |
-| `POST` | `/api/v1/auth/otp/verify` | Verify OTP and create/link User |
+
+| Method | Endpoint                  | Description                          |
+| :----- | :------------------------ | :----------------------------------- |
+| `POST` | `/api/v1/auth/otp/send`   | Request a 6-digit code for a session |
+| `POST` | `/api/v1/auth/otp/verify` | Verify OTP and create/link User      |
 
 ### User Profile
-| Method | Endpoint | Description | Status Transition |
-| :--- | :--- | :--- | :--- |
+
+| Method | Endpoint               | Description                             | Status Transition   |
+| :----- | :--------------------- | :-------------------------------------- | :------------------ |
 | `POST` | `/api/v1/user/profile` | Save mandatory email & shipping address | `ADDRESS_CONFIRMED` |
 
 ---
@@ -72,22 +76,25 @@ src/
 ## 🛡 Security & Validation
 
 The service implements strict defensive boundaries:
-*   **Tenant Isolation**: All operations are scoped to the `x-store-id`. One store cannot access another's sessions.
-*   **Identity Integrity**: `phone` and `email` are mandatory. Payments are blocked if contact details are missing.
-*   **Data Ownership**: Users can only use address IDs belonging to their own account.
-*   **Address Deduplication**: The system prevents database bloat by querying for an exact identical address match before creating a new shipping profile.
-*   **State Locking**: Finalization is blocked unless the session has reached the `ADDRESS_CONFIRMED` state.
-*   **Webhook Verification**: Payment callbacks enforce strict reverse-hash calculations (with raw byte matching, avoiding `.trim()` mutations) to prevent spoofed or tampered payment callbacks.
+
+- **Tenant Isolation**: All operations are scoped to the `x-store-id`. One store cannot access another's sessions.
+- **Identity Integrity**: `phone` and `email` are mandatory. Payments are blocked if contact details are missing.
+- **Data Ownership**: Users can only use address IDs belonging to their own account.
+- **Address Deduplication**: The system prevents database bloat by querying for an exact identical address match before creating a new shipping profile.
+- **State Locking**: Finalization is blocked unless the session has reached the `ADDRESS_CONFIRMED` state.
+- **Webhook Verification**: Payment callbacks enforce strict reverse-hash calculations (with raw byte matching, avoiding `.trim()` mutations) to prevent spoofed or tampered payment callbacks.
 
 ---
 
 ## 🛠 Local Development
 
 ### Prerequisites
+
 - [pnpm](https://pnpm.io/) (Package Manager)
 - [PostgreSQL](https://www.postgresql.org/) (Local or Cloud instance)
 
 ### Setup
+
 1.  **Install dependencies**:
     ```bash
     pnpm install

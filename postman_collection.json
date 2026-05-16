@@ -42,7 +42,11 @@
               "mode": "raw",
               "raw": "{\"items\": [{\"productId\": \"prod_WH_001\", \"sku\": \"SKU-WH-BK\", \"name\": \"Wireless Headphones (Black)\", \"price\": 4999, \"quantity\": 1}], \"currency\": \"INR\"}"
             },
-            "url": { "raw": "{{base_url}}/api/v1/checkout/init", "host": ["{{base_url}}"], "path": ["api", "v1", "checkout", "init"] }
+            "url": {
+              "raw": "{{base_url}}/api/v1/checkout/init",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "checkout", "init"]
+            }
           }
         },
         {
@@ -57,7 +61,11 @@
               "mode": "raw",
               "raw": "{\"phone\": \"{{phone}}\", \"sessionId\": \"{{session_id}}\"}"
             },
-            "url": { "raw": "{{base_url}}/api/v1/auth/otp/send", "host": ["{{base_url}}"], "path": ["api", "v1", "auth", "otp", "send"] }
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/otp/send",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "auth", "otp", "send"]
+            }
           }
         },
         {
@@ -72,7 +80,11 @@
               "mode": "raw",
               "raw": "{\"phone\": \"{{phone}}\", \"sessionId\": \"{{session_id}}\", \"code\": \"123456\"}"
             },
-            "url": { "raw": "{{base_url}}/api/v1/auth/otp/verify", "host": ["{{base_url}}"], "path": ["api", "v1", "auth", "otp", "verify"] }
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/otp/verify",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "auth", "otp", "verify"]
+            }
           }
         },
         {
@@ -87,7 +99,11 @@
               "mode": "raw",
               "raw": "{\n  \"sessionId\": \"{{session_id}}\",\n  \"email\": \"customer@example.com\",\n  \"newAddress\": {\n    \"type\": \"HOME\",\n    \"firstName\": \"Test\",\n    \"lastName\": \"User\",\n    \"flatHouse\": \"123 App Sec\",\n    \"areaStreet\": \"Main Street\",\n    \"receiversPhone\": \"{{phone}}\",\n    \"city\": \"Bengaluru\",\n    \"state\": \"Karnataka\",\n    \"pincode\": \"560103\"\n  }\n}"
             },
-            "url": { "raw": "{{base_url}}/api/v1/user/profile", "host": ["{{base_url}}"], "path": ["api", "v1", "user", "profile"] }
+            "url": {
+              "raw": "{{base_url}}/api/v1/user/profile",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "user", "profile"]
+            }
           }
         },
         {
@@ -118,16 +134,18 @@
               "mode": "raw",
               "raw": "{\"sessionId\": \"{{session_id}}\", \"paymentMethod\": \"PayU\"}"
             },
-            "url": { "raw": "{{base_url}}/api/v1/checkout/finalize", "host": ["{{base_url}}"], "path": ["api", "v1", "checkout", "finalize"] }
+            "url": {
+              "raw": "{{base_url}}/api/v1/checkout/finalize",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "checkout", "finalize"]
+            }
           }
         },
         {
           "name": "Step 5 — Mock Webhook Success",
           "request": {
             "method": "POST",
-            "header": [
-              { "key": "Content-Type", "value": "application/x-www-form-urlencoded" }
-            ],
+            "header": [{ "key": "Content-Type", "value": "application/x-www-form-urlencoded" }],
             "body": {
               "mode": "urlencoded",
               "urlencoded": [
@@ -142,7 +160,11 @@
                 { "key": "mihpayid", "value": "postman_{{$timestamp}}" }
               ]
             },
-            "url": { "raw": "{{base_url}}/api/v1/checkout/payu/callback", "host": ["{{base_url}}"], "path": ["api", "v1", "checkout", "payu", "callback"] }
+            "url": {
+              "raw": "{{base_url}}/api/v1/checkout/payu/callback",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "checkout", "payu", "callback"]
+            }
           }
         }
       ]
@@ -175,7 +197,11 @@
               "mode": "raw",
               "raw": "{\"items\": [{\"productId\": \"prod_WH_001\", \"sku\": \"SKU-WH-BK\", \"name\": \"Wireless Headphones (Black)\", \"price\": 4999, \"quantity\": 1}], \"currency\": \"INR\"}"
             },
-            "url": { "raw": "{{base_url}}/api/v1/checkout/init", "host": ["{{base_url}}"], "path": ["api", "v1", "checkout", "init"] }
+            "url": {
+              "raw": "{{base_url}}/api/v1/checkout/init",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "checkout", "init"]
+            }
           }
         },
         {
@@ -190,7 +216,11 @@
               "mode": "raw",
               "raw": "{\"phone\": \"{{phone}}\", \"sessionId\": \"{{session_id}}\", \"code\": \"123456\"}"
             },
-            "url": { "raw": "{{base_url}}/api/v1/auth/otp/verify", "host": ["{{base_url}}"], "path": ["api", "v1", "auth", "otp", "verify"] }
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/otp/verify",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "auth", "otp", "verify"]
+            }
           }
         },
         {
@@ -211,10 +241,12 @@
           ],
           "request": {
             "method": "GET",
-            "header": [
-              { "key": "x-store-id", "value": "{{store_id}}" }
-            ],
-            "url": { "raw": "{{base_url}}/api/v1/checkout/summary/{{session_id}}", "host": ["{{base_url}}"], "path": ["api", "v1", "checkout", "summary", "{{session_id}}"] }
+            "header": [{ "key": "x-store-id", "value": "{{store_id}}" }],
+            "url": {
+              "raw": "{{base_url}}/api/v1/checkout/summary/{{session_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "checkout", "summary", "{{session_id}}"]
+            }
           }
         },
         {
@@ -229,7 +261,11 @@
               "mode": "raw",
               "raw": "{\n  \"sessionId\": \"{{session_id}}\",\n  \"email\": \"divyansh@example.com\",\n  \"addressId\": \"{{saved_address_id}}\"\n}"
             },
-            "url": { "raw": "{{base_url}}/api/v1/user/profile", "host": ["{{base_url}}"], "path": ["api", "v1", "user", "profile"] }
+            "url": {
+              "raw": "{{base_url}}/api/v1/user/profile",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "user", "profile"]
+            }
           }
         }
       ]
@@ -250,7 +286,11 @@
               "mode": "raw",
               "raw": "{\"items\": [{\"productId\": \"prod_1\", \"sku\": \"S1\", \"name\": \"Shirt\", \"price\": 500, \"quantity\": 1}], \"currency\": \"INR\"}"
             },
-            "url": { "raw": "{{base_url}}/api/v1/checkout/init", "host": ["{{base_url}}"], "path": ["api", "v1", "checkout", "init"] }
+            "url": {
+              "raw": "{{base_url}}/api/v1/checkout/init",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "checkout", "init"]
+            }
           }
         },
         {
@@ -277,7 +317,11 @@
               "mode": "raw",
               "raw": "{\"sessionId\": \"{{session_id}}\", \"paymentMethod\": \"COD\"}"
             },
-            "url": { "raw": "{{base_url}}/api/v1/checkout/finalize", "host": ["{{base_url}}"], "path": ["api", "v1", "checkout", "finalize"] }
+            "url": {
+              "raw": "{{base_url}}/api/v1/checkout/finalize",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "checkout", "finalize"]
+            }
           }
         }
       ]
@@ -297,7 +341,11 @@
                 { "key": "hash", "value": "invalid_signature" }
               ]
             },
-            "url": { "raw": "{{base_url}}/api/v1/checkout/payu/callback", "host": ["{{base_url}}"], "path": ["api", "v1", "checkout", "payu", "callback"] }
+            "url": {
+              "raw": "{{base_url}}/api/v1/checkout/payu/callback",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "checkout", "payu", "callback"]
+            }
           }
         },
         {
@@ -305,7 +353,11 @@
           "request": {
             "method": "GET",
             "header": [{ "key": "x-store-id", "value": "hacker_store" }],
-            "url": { "raw": "{{base_url}}/api/v1/checkout/summary/{{session_id}}", "host": ["{{base_url}}"], "path": ["api", "v1", "checkout", "summary", "{{session_id}}"] }
+            "url": {
+              "raw": "{{base_url}}/api/v1/checkout/summary/{{session_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "checkout", "summary", "{{session_id}}"]
+            }
           }
         }
       ]
