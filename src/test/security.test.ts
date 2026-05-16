@@ -24,6 +24,7 @@ describe('Security and Defensive Edge Case Tests', () => {
 
   beforeAll(async () => {
     // Cleanup
+    await prisma.transaction.deleteMany({});
     await prisma.checkoutSession.deleteMany({});
     await prisma.address.deleteMany({});
     await prisma.user.deleteMany({});

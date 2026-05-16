@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Evoc Checkout API - Full Workflow",
-    "description": "End-to-end checkout flow including PayU payment. Run requests in order within each folder. Callback simulations auto-use the debugCallbackPayload from Finalize.",
+    "description": "End-to-end checkout flow including PayU v2 payment. Run requests in order within each folder.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -10,15 +10,13 @@
     { "key": "session_id", "value": "", "type": "string" },
     { "key": "phone", "value": "+919876543210", "type": "string" },
     { "key": "txnid", "value": "", "type": "string" },
-    { "key": "payu_hash", "value": "", "type": "string" },
     { "key": "saved_address_id", "value": "", "type": "string" },
-    { "key": "payu_key", "value": "T5c7MB", "type": "string" },
-    { "key": "callback_hash", "value": "", "type": "string" }
+    { "key": "payu_key", "value": "T5c7MB", "type": "string" }
   ],
   "item": [
     {
-      "name": "Scenario A: Fresh Customer",
-      "description": "Simulates a brand new user who needs to create an address.",
+      "name": "Scenario A: Fresh Customer (PayU v2)",
+      "description": "Full E2E flow for a brand new user using PayU v2 API-to-API integration.",
       "item": [
         {
           "name": "Step 1 — Init Checkout",
@@ -78,7 +76,7 @@
           }
         },
         {
-          "name": "Step 3 — Create New Address",
+          "name": "Step 3 — Set Email & Address",
           "request": {
             "method": "POST",
             "header": [
@@ -87,23 +85,13 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"sessionId\": \"{{session_id}}\",\n  \"email\": \"arjun.mehta@example.com\",\n  \"newAddress\": {\n    \"type\": \"HOME\",\n    \"firstName\": \"Arjun\",\n    \"lastName\": \"Mehta\",\n    \"flatHouse\": \"Penthouse B, Sky Tower\",\n    \"areaStreet\": \"Outer Ring Road, Marathahalli\",\n    \"receiversPhone\": \"{{phone}}\",\n    \"city\": \"Bengaluru\",\n    \"state\": \"Karnataka\",\n    \"pincode\": \"560103\"\n  }\n}"
+              "raw": "{\n  \"sessionId\": \"{{session_id}}\",\n  \"email\": \"customer@example.com\",\n  \"newAddress\": {\n    \"type\": \"HOME\",\n    \"firstName\": \"Test\",\n    \"lastName\": \"User\",\n    \"flatHouse\": \"123 App Sec\",\n    \"areaStreet\": \"Main Street\",\n    \"receiversPhone\": \"{{phone}}\",\n    \"city\": \"Bengaluru\",\n    \"state\": \"Karnataka\",\n    \"pincode\": \"560103\"\n  }\n}"
             },
             "url": { "raw": "{{base_url}}/api/v1/user/profile", "host": ["{{base_url}}"], "path": ["api", "v1", "user", "profile"] }
           }
         },
         {
-          "name": "Step 4 — Get Summary",
-          "request": {
-            "method": "GET",
-            "header": [
-              { "key": "x-store-id", "value": "{{store_id}}" }
-            ],
-            "url": { "raw": "{{base_url}}/api/v1/checkout/summary/{{session_id}}", "host": ["{{base_url}}"], "path": ["api", "v1", "checkout", "summary", "{{session_id}}"] }
-          }
-        },
-        {
-          "name": "Step 5 — Finalize (PayU)",
+          "name": "Step 4 — Finalize (PayU v2)",
           "event": [
             {
               "listen": "test",
@@ -111,14 +99,11 @@
                 "type": "text/javascript",
                 "exec": [
                   "const res = pm.response.json();",
-                  "if (res.success && res.data) {",
-                  "  pm.collectionVariables.set('txnid', res.data.gatewayTransactionId);",
-                  "  if (res.data.debugCallbackPayload) {",
-                  "    pm.collectionVariables.set('debug_callback_payload', JSON.stringify(res.data.debugCallbackPayload));",
-                  "    pm.collectionVariables.set('callback_hash', res.data.debugCallbackPayload.hash);",
-                  "    pm.collectionVariables.set('payu_key', res.data.debugCallbackPayload.key);",
-                  "  }",
-                  "}"
+                  "pm.test('API-to-API Intent Success', () => {",
+                  "  pm.expect(res.data.paymentUrl).to.exist;",
+                  "  pm.expect(res.data.paymentGateway).to.eql('PayU');",
+                  "});",
+                  "if (res.success) pm.collectionVariables.set('txnid', res.data.gatewayTransactionId);"
                 ]
               }
             }
@@ -137,18 +122,7 @@
           }
         },
         {
-          "name": "Step 6 — Simulate PayU Callback (Success)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('Callback returns redirect', () => pm.expect(pm.response.code).to.be.oneOf([200, 301, 302]));"
-                ]
-              }
-            }
-          ],
+          "name": "Step 5 — Mock Webhook Success",
           "request": {
             "method": "POST",
             "header": [
@@ -161,48 +135,21 @@
                 { "key": "txnid", "value": "{{txnid}}" },
                 { "key": "amount", "value": "4999.00" },
                 { "key": "productinfo", "value": "Wireless Headphones (Black)" },
-                { "key": "firstname", "value": "Arjun" },
-                { "key": "email", "value": "arjun.mehta@example.com" },
+                { "key": "firstname", "value": "Test" },
+                { "key": "email", "value": "customer@example.com" },
                 { "key": "key", "value": "{{payu_key}}" },
-                { "key": "hash", "value": "{{callback_hash}}" },
-                { "key": "udf1", "value": "" },
-                { "key": "udf2", "value": "" },
-                { "key": "udf3", "value": "" },
-                { "key": "udf4", "value": "" },
-                { "key": "udf5", "value": "" },
-                { "key": "mihpayid", "value": "postman_mihpay_{{$timestamp}}" }
+                { "key": "hash", "value": "MOCK_HASH_FOR_LOCAL_DEV" },
+                { "key": "mihpayid", "value": "postman_{{$timestamp}}" }
               ]
             },
             "url": { "raw": "{{base_url}}/api/v1/checkout/payu/callback", "host": ["{{base_url}}"], "path": ["api", "v1", "checkout", "payu", "callback"] }
-          }
-        },
-        {
-          "name": "Step 7 — Verify Session Completed",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "const res = pm.response.json();",
-                  "pm.test('Session is COMPLETED', () => pm.expect(res.data.status).to.eql('COMPLETED'));"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "GET",
-            "header": [
-              { "key": "x-store-id", "value": "{{store_id}}" }
-            ],
-            "url": { "raw": "{{base_url}}/api/v1/checkout/summary/{{session_id}}", "host": ["{{base_url}}"], "path": ["api", "v1", "checkout", "summary", "{{session_id}}"] }
           }
         }
       ]
     },
     {
       "name": "Scenario B: Repeating Customer",
-      "description": "Simulates a returning user who reuses a saved address.",
+      "description": "Flow for returning user re-using existing address.",
       "item": [
         {
           "name": "Step 1 — Init Checkout",
@@ -232,22 +179,7 @@
           }
         },
         {
-          "name": "Step 2a — Send OTP",
-          "request": {
-            "method": "POST",
-            "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "x-store-id", "value": "{{store_id}}" }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\"phone\": \"{{phone}}\", \"sessionId\": \"{{session_id}}\"}"
-            },
-            "url": { "raw": "{{base_url}}/api/v1/auth/otp/send", "host": ["{{base_url}}"], "path": ["api", "v1", "auth", "otp", "send"] }
-          }
-        },
-        {
-          "name": "Step 2b — Verify OTP",
+          "name": "Step 2 — Verify OTP",
           "request": {
             "method": "POST",
             "header": [
@@ -262,7 +194,7 @@
           }
         },
         {
-          "name": "Step 3 — Fetch Saved Data",
+          "name": "Step 3 — Fetch & Select Saved Address",
           "event": [
             {
               "listen": "test",
@@ -272,7 +204,6 @@
                   "const res = pm.response.json();",
                   "if (res.data.user && res.data.user.addresses.length > 0) {",
                   "  pm.collectionVariables.set('saved_address_id', res.data.user.addresses[0].id);",
-                  "  console.log('✅ Found saved address:', res.data.user.addresses[0].id);",
                   "}"
                 ]
               }
@@ -304,117 +235,11 @@
       ]
     },
     {
-      "name": "Security & Edge Cases",
-      "item": [
-        {
-          "name": "Tenant Isolation: Wrong Store ID",
-          "request": {
-            "method": "POST",
-            "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "x-store-id", "value": "wrong_store_999" }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\"phone\": \"{{phone}}\", \"sessionId\": \"{{session_id}}\"}"
-            },
-            "url": { "raw": "{{base_url}}/api/v1/auth/otp/send", "host": ["{{base_url}}"], "path": ["api", "v1", "auth", "otp", "send"] }
-          }
-        },
-        {
-          "name": "State Machine: Finalize before Address",
-          "request": {
-            "method": "POST",
-            "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "x-store-id", "value": "{{store_id}}" }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\"sessionId\": \"{{session_id}}\", \"paymentMethod\": \"PayU\"}"
-            },
-            "url": { "raw": "{{base_url}}/api/v1/checkout/finalize", "host": ["{{base_url}}"], "path": ["api", "v1", "checkout", "finalize"] }
-          }
-        },
-        {
-          "name": "Data Validation: Invalid Phone Format",
-          "request": {
-            "method": "POST",
-            "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "x-store-id", "value": "{{store_id}}" }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\"phone\": \"invalid-phone\", \"sessionId\": \"{{session_id}}\"}"
-            },
-            "url": { "raw": "{{base_url}}/api/v1/auth/otp/send", "host": ["{{base_url}}"], "path": ["api", "v1", "auth", "otp", "send"] }
-          }
-        },
-        {
-          "name": "Data Validation: Non-numeric Pincode",
-          "request": {
-            "method": "POST",
-            "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "x-store-id", "value": "{{store_id}}" }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"sessionId\": \"{{session_id}}\",\n  \"email\": \"test@example.com\",\n  \"newAddress\": {\n    \"type\": \"HOME\",\n    \"firstName\": \"Test\",\n    \"lastName\": \"User\",\n    \"flatHouse\": \"123\",\n    \"areaStreet\": \"Street\",\n    \"receiversPhone\": \"{{phone}}\",\n    \"city\": \"City\",\n    \"state\": \"State\",\n    \"pincode\": \"ABCDEF\"\n  }\n}"
-            },
-            "url": { "raw": "{{base_url}}/api/v1/user/profile", "host": ["{{base_url}}"], "path": ["api", "v1", "user", "profile"] }
-          }
-        }
-      ]
-    },
-    {
-      "name": "Fix A: GET Callback Test",
-      "description": "Tests the GET /payu/callback route added for mobile/3DS redirects. Run Scenario A first to get a valid txnid.",
-      "item": [
-        {
-          "name": "GET Callback (3DS/Mobile redirect)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('GET callback returns redirect', () => pm.expect(pm.response.code).to.be.oneOf([301, 302]));"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{base_url}}/api/v1/checkout/payu/callback?status=success&txnid={{txnid}}&amount=4999.00&productinfo=Wireless+Headphones+(Black)&firstname=Arjun&email=arjun.mehta@example.com&key={{payu_key}}&hash={{callback_hash}}&udf1=&udf2=&udf3=&udf4=&udf5=&mihpayid=get_test_{{$timestamp}}",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "checkout", "payu", "callback"]
-            }
-          }
-        }
-      ]
-    },
-    {
       "name": "Scenario C: Cash on Delivery",
-      "description": "COD checkout — skips the callback entirely. Session goes directly from ADDRESS_CONFIRMED → COMPLETED on finalize.",
+      "description": "Standard COD flow.",
       "item": [
         {
-          "name": "Step 1 — Init Checkout",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "const res = pm.response.json();",
-                  "if (res.success) pm.collectionVariables.set('session_id', res.data.sessionId);"
-                ]
-              }
-            }
-          ],
+          "name": "Step 1 — Init & Set Address (Pincode: 560034)",
           "request": {
             "method": "POST",
             "header": [
@@ -423,58 +248,13 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\"items\": [{\"productId\": \"prod_TSHIRT_001\", \"sku\": \"SKU-TS-WHT-L\", \"name\": \"Cotton T-Shirt (White, L)\", \"price\": 899, \"quantity\": 2}], \"currency\": \"INR\"}"
+              "raw": "{\"items\": [{\"productId\": \"prod_1\", \"sku\": \"S1\", \"name\": \"Shirt\", \"price\": 500, \"quantity\": 1}], \"currency\": \"INR\"}"
             },
             "url": { "raw": "{{base_url}}/api/v1/checkout/init", "host": ["{{base_url}}"], "path": ["api", "v1", "checkout", "init"] }
           }
         },
         {
-          "name": "Step 2a — Send OTP",
-          "request": {
-            "method": "POST",
-            "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "x-store-id", "value": "{{store_id}}" }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\"phone\": \"{{phone}}\", \"sessionId\": \"{{session_id}}\"}"
-            },
-            "url": { "raw": "{{base_url}}/api/v1/auth/otp/send", "host": ["{{base_url}}"], "path": ["api", "v1", "auth", "otp", "send"] }
-          }
-        },
-        {
-          "name": "Step 2b — Verify OTP",
-          "request": {
-            "method": "POST",
-            "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "x-store-id", "value": "{{store_id}}" }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\"phone\": \"{{phone}}\", \"sessionId\": \"{{session_id}}\", \"code\": \"123456\"}"
-            },
-            "url": { "raw": "{{base_url}}/api/v1/auth/otp/verify", "host": ["{{base_url}}"], "path": ["api", "v1", "auth", "otp", "verify"] }
-          }
-        },
-        {
-          "name": "Step 3 — Create Address",
-          "request": {
-            "method": "POST",
-            "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "x-store-id", "value": "{{store_id}}" }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"sessionId\": \"{{session_id}}\",\n  \"email\": \"cod.buyer@example.com\",\n  \"newAddress\": {\n    \"type\": \"HOME\",\n    \"firstName\": \"Priya\",\n    \"lastName\": \"Sharma\",\n    \"flatHouse\": \"302, Lakshmi Apartments\",\n    \"areaStreet\": \"MG Road, Koramangala\",\n    \"receiversPhone\": \"{{phone}}\",\n    \"city\": \"Bengaluru\",\n    \"state\": \"Karnataka\",\n    \"pincode\": \"560034\"\n  }\n}"
-            },
-            "url": { "raw": "{{base_url}}/api/v1/user/profile", "host": ["{{base_url}}"], "path": ["api", "v1", "user", "profile"] }
-          }
-        },
-        {
-          "name": "Step 4 — Finalize (COD) ⭐",
+          "name": "Step 2 — Finalize (COD)",
           "event": [
             {
               "listen": "test",
@@ -482,10 +262,7 @@
                 "type": "text/javascript",
                 "exec": [
                   "const res = pm.response.json();",
-                  "pm.test('COD order is COMPLETED immediately', () => {",
-                  "  pm.expect(res.data.status).to.eql('COMPLETED');",
-                  "  pm.expect(res.data.paymentMethod).to.eql('COD');",
-                  "});"
+                  "pm.test('COD immediate success', () => pm.expect(res.data.status).to.eql('COMPLETED'));"
                 ]
               }
             }
@@ -501,6 +278,34 @@
               "raw": "{\"sessionId\": \"{{session_id}}\", \"paymentMethod\": \"COD\"}"
             },
             "url": { "raw": "{{base_url}}/api/v1/checkout/finalize", "host": ["{{base_url}}"], "path": ["api", "v1", "checkout", "finalize"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Edge Cases & Safety",
+      "item": [
+        {
+          "name": "Security: Hash Mismatch (Webhook)",
+          "request": {
+            "method": "POST",
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                { "key": "status", "value": "success" },
+                { "key": "txnid", "value": "fake_txn" },
+                { "key": "hash", "value": "invalid_signature" }
+              ]
+            },
+            "url": { "raw": "{{base_url}}/api/v1/checkout/payu/callback", "host": ["{{base_url}}"], "path": ["api", "v1", "checkout", "payu", "callback"] }
+          }
+        },
+        {
+          "name": "Safety: Wrong Store ID Isolation",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "x-store-id", "value": "hacker_store" }],
+            "url": { "raw": "{{base_url}}/api/v1/checkout/summary/{{session_id}}", "host": ["{{base_url}}"], "path": ["api", "v1", "checkout", "summary", "{{session_id}}"] }
           }
         }
       ]

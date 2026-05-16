@@ -1,19 +1,23 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, afterAll, beforeEach } from 'vitest';
 import supertest from 'supertest';
 import app from '../app.js';
 import { prisma } from '../config/prisma.js';
-import { PayUGateway } from '../services/payment.service.js';
+import { PayUV2Gateway } from '../services/payment.service.js';
 
 const request = supertest(app);
 
 describe('PayU Webhook Contract Test', () => {
   let sessionId: string;
-  let storeId = 'test-store-123';
+  const storeId = 'test-store-123';
   let txnid: string;
   const amount = 500.0;
 
-  beforeAll(async () => {
-    // 1. Setup a dummy session in the database
+  beforeEach(async () => {
+    // Cleanup
+    await prisma.transaction.deleteMany({ where: { storeId } });
+    await prisma.checkoutSession.deleteMany({ where: { storeId } });
+
+    // Setup a dummy session in the database for tests that need it
     txnid = `txid_test_${Math.random().toString(36).substring(7)}`;
 
     const session = await prisma.checkoutSession.create({
@@ -44,13 +48,13 @@ describe('PayU Webhook Contract Test', () => {
   });
 
   afterAll(async () => {
-    // Cleanup
-    await prisma.transaction.deleteMany({ where: { sessionId } });
-    await prisma.checkoutSession.deleteMany({ where: { id: sessionId } });
+    // Final cleanup
+    await prisma.transaction.deleteMany({ where: { storeId } });
+    await prisma.checkoutSession.deleteMany({ where: { storeId } });
   });
 
   it('should successfully process a valid PayU success webhook', async () => {
-    const gateway = new PayUGateway();
+    const gateway = new PayUV2Gateway();
 
     // Use the helper to generate a "perfect" payload (signed with real Salt)
     const payload = gateway.getDebugCallbackPayload({
@@ -83,7 +87,17 @@ describe('PayU Webhook Contract Test', () => {
   });
 
   it('should reject a webhook if the hash is tampered with', async () => {
-    const gateway = new PayUGateway();
+    // Pre-condition: Session is already COMPLETED (to test idempotency/protection)
+    // Actually, let's keep it PAYMENT_PENDING to see if it stays PAYMENT_PENDING on error
+    // or if we want to test that it stays COMPLETED if it was already completed.
+    // The previous test version had it as COMPLETED because it ran after the first test.
+
+    await prisma.checkoutSession.update({
+      where: { id: sessionId },
+      data: { status: 'COMPLETED' },
+    });
+
+    const gateway = new PayUV2Gateway();
     const payload = gateway.getDebugCallbackPayload({
       txnid,
       amount: amount.toFixed(2),
@@ -102,7 +116,7 @@ describe('PayU Webhook Contract Test', () => {
     expect(response.status).toBe(302);
     expect(response.header.location).toContain('reason=hash_mismatch');
 
-    // Assert: Database status should NOT change (stays COMPLETED from previous test)
+    // Assert: Database status should NOT change
     const session = await prisma.checkoutSession.findUnique({
       where: { id: sessionId },
     });
@@ -110,7 +124,9 @@ describe('PayU Webhook Contract Test', () => {
   });
 
   it('should prevent amount tampering (paying less than required)', async () => {
-    // Create a new session for this specific test
+    // This test creates its own session, but beforeEach also creates one.
+    // That's fine as long as we use the right IDs.
+
     const newTxnId = `txid_hack_${Math.random().toString(36).substring(7)}`;
     const session = await prisma.checkoutSession.create({
       data: {
@@ -124,7 +140,19 @@ describe('PayU Webhook Contract Test', () => {
       },
     });
 
-    const gateway = new PayUGateway();
+    await prisma.transaction.create({
+      data: {
+        sessionId: session.id,
+        storeId,
+        amount: 1000.0,
+        status: 'PENDING',
+        paymentMethod: 'ONLINE',
+        paymentGateway: 'PAYU',
+        gatewayTransactionId: newTxnId,
+      },
+    });
+
+    const gateway = new PayUV2Gateway();
     // Hacker tries to send a "success" payload but with only ₹1 paid
     const payload = gateway.getDebugCallbackPayload({
       txnid: newTxnId,

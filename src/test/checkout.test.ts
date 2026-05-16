@@ -15,18 +15,33 @@ vi.mock('../services/otp.service.js', () => {
   };
 });
 
-// Mock fetch for reconciliation API
-global.fetch = vi.fn().mockResolvedValue({
-  ok: true,
-  json: async () => ({
-    status: 1,
-    msg: '1 out of 1 Transactions Fetched Successfully',
-    transaction_details: {
-      mock_txnid: {
-        status: 'success',
+// Mock fetch to handle both PayU V2 Intent creation and Reconciliation API
+global.fetch = vi.fn().mockImplementation(async (url: string) => {
+  if (url.includes('/v2/payments')) {
+    return {
+      ok: true,
+      json: async () => ({
+        status: 1,
+        result: {
+          checkoutUrl: 'https://apitest.payu.in/v2/_payment/mock_session_123',
+        },
+      }),
+    };
+  }
+
+  // Default mock for Reconciliation API
+  return {
+    ok: true,
+    json: async () => ({
+      status: 1,
+      msg: '1 out of 1 Transactions Fetched Successfully',
+      transaction_details: {
+        // We'll handle the specific txnid inside Step 7 if needed,
+        // but for general cases this works.
+        mock_txnid: { status: 'success' },
       },
-    },
-  }),
+    }),
+  };
 }) as unknown as typeof fetch;
 
 describe('Checkout Flow Integration Test', () => {
@@ -40,6 +55,12 @@ describe('Checkout Flow Integration Test', () => {
     const usersToDelete = await prisma.user.findMany({ where: { phone } });
     const userIds = usersToDelete.map((u) => u.id);
     if (userIds.length > 0) {
+      const sessions = await prisma.checkoutSession.findMany({
+        where: { userId: { in: userIds } },
+        select: { id: true },
+      });
+      const sessionIds = sessions.map((s) => s.id);
+      await prisma.transaction.deleteMany({ where: { sessionId: { in: sessionIds } } });
       await prisma.checkoutSession.deleteMany({ where: { userId: { in: userIds } } });
       await prisma.address.deleteMany({ where: { userId: { in: userIds } } });
       await prisma.user.deleteMany({ where: { id: { in: userIds } } });
@@ -146,7 +167,7 @@ describe('Checkout Flow Integration Test', () => {
     expect(response.body.success).toBe(true);
     expect(response.body.data.status).toBe('PAYMENT_PENDING');
     expect(response.body.data.paymentGateway).toBe('PayU');
-    expect(response.body.data.additionalParams).toBeDefined();
+    expect(response.body.data.paymentUrl).toBeDefined();
 
     txnid = response.body.data.gatewayTransactionId;
   });
@@ -169,7 +190,7 @@ describe('Checkout Flow Integration Test', () => {
     }) as unknown as typeof fetch;
 
     // Use gateway's own debug payload to get a hash that matches its actual credentials
-    const gateway = new (await import('../services/payment.service.js')).PayUGateway();
+    const gateway = new (await import('../services/payment.service.js')).PayUV2Gateway();
     const payload = gateway.getDebugCallbackPayload({
       txnid,
       amount: '1000.00',

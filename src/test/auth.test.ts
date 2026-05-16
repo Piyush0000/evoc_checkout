@@ -26,6 +26,12 @@ describe('OTP Authentication Integration Tests', () => {
     const usersToDelete = await prisma.user.findMany({ where: { phone } });
     const userIds = usersToDelete.map((u) => u.id);
     if (userIds.length > 0) {
+      const sessions = await prisma.checkoutSession.findMany({
+        where: { userId: { in: userIds } },
+        select: { id: true },
+      });
+      const sessionIds = sessions.map((s) => s.id);
+      await prisma.transaction.deleteMany({ where: { sessionId: { in: sessionIds } } });
       await prisma.checkoutSession.deleteMany({ where: { userId: { in: userIds } } });
       await prisma.address.deleteMany({ where: { userId: { in: userIds } } });
       await prisma.user.deleteMany({ where: { id: { in: userIds } } });

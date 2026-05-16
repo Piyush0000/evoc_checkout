@@ -30,6 +30,13 @@ export interface CustomerDetails {
   lastName: string;
   email: string;
   phone: string;
+  address?: {
+    line1: string;
+    city: string;
+    state: string;
+    zipCode: string;
+    country: string;
+  };
 }
 
 /**
@@ -59,9 +66,284 @@ export interface IPaymentGateway {
 }
 
 /**
- * PayU Implementation (India-focused)
- * Using Hosted Checkout / Web Checkout Pro logic
+ * PayU v2 Implementation (Hosted Checkout / Non-Seamless)
  */
+export class PayUV2Gateway implements IPaymentGateway {
+  readonly key: string;
+  readonly salt: string;
+  private paymentsUrl: string;
+  private transactionUrl: string;
+  private surl: string;
+  private furl: string;
+
+  constructor() {
+    const isProduction = process.env.NODE_ENV === 'production';
+
+    if (isProduction) {
+      if (!process.env.PAYU_KEY || !process.env.PAYU_SALT) {
+        throw new Error('[PAYU_V2] ❌ CRITICAL: Credentials missing in production.');
+      }
+      this.key = process.env.PAYU_KEY;
+      this.salt = process.env.PAYU_SALT;
+    } else {
+      this.key = process.env.PAYU_KEY || process.env.TEST_PAYU_KEY || '';
+      this.salt = process.env.PAYU_SALT || process.env.TEST_PAYU_SALT || '';
+    }
+
+    this.paymentsUrl = isProduction
+      ? 'https://api.payu.in/v2/payments'
+      : 'https://apitest.payu.in/v2/payments';
+
+    this.transactionUrl = isProduction
+      ? 'https://info.payu.in/v3/transaction'
+      : 'https://test.payu.in/v3/transaction';
+
+    const callbackUrl =
+      process.env.PAYU_CALLBACK_URL || 'http://localhost:3000/api/v1/checkout/payu/callback';
+    this.surl = callbackUrl;
+    this.furl = callbackUrl;
+  }
+
+  private generateV2Auth(body: Record<string, unknown>, dateStr: string): string {
+    const data = JSON.stringify(body);
+    // Hash logic: sha512(`<Body data>` + '|' + date + '|' + merchant_secret)
+    const hashString = `${data}|${dateStr}|${this.salt}`;
+    const hash = crypto.createHash('sha512').update(hashString).digest('hex');
+    return `hmac username="${this.key}", algorithm="sha512", headers="date", signature="${hash}"`;
+  }
+
+  async createIntent(
+    amount: number,
+    _currency: string,
+    customer: CustomerDetails,
+    productInfo: string,
+    _paymentMethod?: string
+  ): Promise<PaymentIntent> {
+    const txnid = `txid_v2_${crypto.randomBytes(12).toString('hex')}`;
+    const date = new Date().toUTCString();
+
+    const body = {
+      accountId: this.key,
+      txnId: txnid,
+      order: {
+        productInfo,
+        paymentChargeSpecification: {
+          price: amount,
+        },
+      },
+      billingDetails: {
+        firstName: customer.firstName,
+        lastName: customer.lastName || '',
+        email: customer.email,
+        phone: customer.phone,
+        address: {
+          address1: customer.address?.line1 || 'NA',
+          city: customer.address?.city || 'NA',
+          state: customer.address?.state || 'NA',
+          country: customer.address?.country || 'India',
+          zipCode: customer.address?.zipCode || '110001',
+        },
+      },
+      callBackActions: {
+        successAction: this.surl,
+        failureAction: this.furl,
+        cancelAction: this.furl,
+      },
+      additionalInfo: {
+        txnFlow: 'nonseamless',
+      },
+    };
+
+    const authHeader = this.generateV2Auth(body, date);
+
+    try {
+      console.info(`[PAYU_V2] Initiating payment for TXN ${txnid} via API`);
+      const response = await fetch(this.paymentsUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          date: date,
+          authorization: authHeader,
+        },
+        body: JSON.stringify(body),
+      });
+
+      const resData = await response.json();
+
+      // Fix: Some PayU v2 environments return status: 'PENDING' (string) instead of status: 1 (number)
+      // If we have a checkoutUrl, we consider it a success.
+      const isSuccess =
+        resData.result?.checkoutUrl && (resData.status === 1 || resData.status === 'PENDING');
+
+      if (!isSuccess) {
+        console.error('[PAYU_V2] API Error Response:', resData);
+        throw new Error(`PayU V2 API Error: ${resData.message || resData.msg || 'Unknown error'}`);
+      }
+
+      return {
+        id: txnid,
+        status: 'created',
+        paymentUrl: resData.result.checkoutUrl,
+      };
+    } catch (error) {
+      console.error('[PAYU_V2] Create Intent Error:', error);
+      throw error;
+    }
+  }
+
+  verifyResponseHash(payload: PayloadRecord): boolean {
+    // Re-use V1's reverse hash verification for callbacks if they follow the same format.
+    // NOTE: This logic is partially derived from the now deprecated v1 implementation.
+    const getString = (value: string | string[] | undefined): string => {
+      if (Array.isArray(value)) return String(value[0] ?? '');
+      return value == null ? '' : String(value);
+    };
+
+    const status = getString(payload.status);
+    const udf1 = getString(payload.udf1);
+    const udf2 = getString(payload.udf2);
+    const udf3 = getString(payload.udf3);
+    const udf4 = getString(payload.udf4);
+    const udf5 = getString(payload.udf5);
+    const email = getString(payload.email);
+    const firstname = getString(payload.firstname);
+    const productinfo = getString(payload.productinfo);
+    const amount = getString(payload.amount);
+    const txnid = getString(payload.txnid);
+    const key = getString(payload.key);
+    const hash = getString(payload.hash);
+    const additional_charges = getString(payload.additional_charges);
+    const splitInfo = getString(payload.splitInfo);
+
+    if (!hash) return false;
+
+    const effectiveKey = key || this.key;
+
+    // Formula: SALT|status|udf10|udf9|udf8|udf7|udf6|udf5|udf4|udf3|udf2|udf1|email|firstname|productinfo|amount|txnid|key
+    const baseNoSplit = `${this.salt}|${status}||||||${udf5}|${udf4}|${udf3}|${udf2}|${udf1}|${email}|${firstname}|${productinfo}|${amount}|${txnid}|${effectiveKey}`;
+    const baseWithSplit = `${this.salt}|${status}|${splitInfo}|||||${udf5}|${udf4}|${udf3}|${udf2}|${udf1}|${email}|${firstname}|${productinfo}|${amount}|${txnid}|${effectiveKey}`;
+
+    const candidateStrings = [baseNoSplit, baseWithSplit];
+
+    const amountNum = parseFloat(amount);
+    if (!isNaN(amountNum)) {
+      const normalizedAmount = amountNum.toFixed(2);
+      if (normalizedAmount !== amount) {
+        candidateStrings.push(
+          `${this.salt}|${status}||||||${udf5}|${udf4}|${udf3}|${udf2}|${udf1}|${email}|${firstname}|${productinfo}|${normalizedAmount}|${txnid}|${effectiveKey}`
+        );
+      }
+    }
+
+    const finalCandidates = [...candidateStrings];
+    if (additional_charges) {
+      candidateStrings.forEach((c) => finalCandidates.push(`${additional_charges}|${c}`));
+    }
+
+    try {
+      const expectedHash = hash.toLowerCase();
+      return finalCandidates.some((candidate) => {
+        const calculatedHash = crypto.createHash('sha512').update(candidate).digest('hex');
+        return crypto.timingSafeEqual(
+          Buffer.from(calculatedHash, 'utf-8'),
+          Buffer.from(expectedHash, 'utf-8')
+        );
+      });
+    } catch {
+      return false;
+    }
+  }
+
+  async verifyPaymentReconciliation(txnid: string): Promise<ReconciliationResult> {
+    const date = new Date().toUTCString();
+    const body = { txnId: [txnid] };
+    const authHeader = this.generateV2Auth(body, date);
+
+    try {
+      const response = await fetch(this.transactionUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          date: date,
+          authorization: authHeader,
+          'Info-Command': 'verify_payment',
+        },
+        body: JSON.stringify(body),
+      });
+
+      const resData = await response.json();
+
+      if (resData.status === 1 && Array.isArray(resData.result) && resData.result.length > 0) {
+        const txn = resData.result[0];
+        console.info(`[PAYU_V2] Verification successful for ${txnid}: ${txn.status}`);
+        return {
+          status: 1,
+          transaction_details: {
+            [txnid]: { status: txn.status },
+          },
+        };
+      }
+
+      console.warn(
+        `[PAYU_V2] Verification failed or pending for ${txnid}:`,
+        resData.message || resData.msg
+      );
+      return { status: 0, msg: resData.message || resData.msg || 'Transaction not found' };
+    } catch (error) {
+      console.error('[PAYUV2] Reconciliation Error:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Helper for testing/debugging. Generates a valid callback payload.
+   * Note: V2 callbacks currently use the same reverse hash logic as V1.
+   */
+  getDebugCallbackPayload(params: {
+    txnid: string;
+    amount: string;
+    productinfo: string;
+    firstname: string;
+    email: string;
+    status: 'success' | 'failure';
+  }): Record<string, string> {
+    const { txnid, amount, productinfo, firstname, email, status } = params;
+    const udf1 = '',
+      udf2 = '',
+      udf3 = '',
+      udf4 = '',
+      udf5 = '';
+
+    const payload = {
+      status,
+      txnid,
+      amount,
+      productinfo,
+      firstname,
+      email,
+      key: this.key,
+      udf1,
+      udf2,
+      udf3,
+      udf4,
+      udf5,
+      mihpayid: `mock_v2_${Math.random().toString(36).substring(7)}`,
+    };
+
+    // sha512(SALT|status||||||udf5|udf4|udf3|udf2|udf1|email|firstname|productinfo|amount|txnid|key)
+    const reverseHashString = `${this.salt}|${status}||||||${udf5}|${udf4}|${udf3}|${udf2}|${udf1}|${email}|${firstname}|${productinfo}|${amount}|${txnid}|${this.key}`;
+    const hash = crypto.createHash('sha512').update(reverseHashString).digest('hex');
+
+    return { ...payload, hash };
+  }
+}
+
+/**
+ * [RETIRED/DEPRECATED] PayU v1 Implementation
+ * Favor PayUV2Gateway for more modern API-to-API communication.
+ * This class is kept for reference but is no longer actively used.
+ */
+/*
 export class PayUGateway implements IPaymentGateway {
   readonly key: string;
   readonly salt: string;
@@ -200,10 +482,6 @@ export class PayUGateway implements IPaymentGateway {
     };
   }
 
-  /**
-   * Helper for manual testing without a frontend.
-   * Generates a valid callback payload with the correct reverse hash.
-   */
   getDebugCallbackPayload(params: {
     txnid: string;
     amount: string;
@@ -235,17 +513,12 @@ export class PayUGateway implements IPaymentGateway {
       mihpayid: `mock_${Math.random().toString(36).substring(7)}`,
     };
 
-    // sha512(SALT|status||||||udf5|udf4|udf3|udf2|udf1|email|firstname|productinfo|amount|txnid|key)
     const reverseHashString = `${this.salt}|${status}||||||${udf5}|${udf4}|${udf3}|${udf2}|${udf1}|${email}|${firstname}|${productinfo}|${amount}|${txnid}|${this.key}`;
     const hash = crypto.createHash('sha512').update(reverseHashString).digest('hex');
 
     return { ...payload, hash };
   }
 
-  /**
-   * Step 1.4.1: Response verification using reverse hashing
-   * Formula: sha512(SALT|status||||||udf5|udf4|udf3|udf2|udf1|email|firstname|productinfo|amount|txnid|key)
-   */
   verifyResponseHash(payload: PayloadRecord): boolean {
     const getString = (value: string | string[] | undefined): string => {
       if (Array.isArray(value)) return String(value[0] ?? '');
@@ -272,16 +545,11 @@ export class PayUGateway implements IPaymentGateway {
 
     const effectiveKey = key || this.key;
 
-    // Base strings for candidate verification
-    // Formula: SALT|status|udf10|udf9|udf8|udf7|udf6|udf5|udf4|udf3|udf2|udf1|email|firstname|productinfo|amount|txnid|key
     const baseNoSplit = `${this.salt}|${status}||||||${udf5}|${udf4}|${udf3}|${udf2}|${udf1}|${email}|${firstname}|${productinfo}|${amount}|${txnid}|${effectiveKey}`;
-
-    // Split formula often inserts splitInfo before UDFs or replaces a UDF slot
     const baseWithSplit = `${this.salt}|${status}|${splitInfo}|||||${udf5}|${udf4}|${udf3}|${udf2}|${udf1}|${email}|${firstname}|${productinfo}|${amount}|${txnid}|${effectiveKey}`;
 
     const candidateStrings = [baseNoSplit, baseWithSplit];
 
-    // Try normalized amount (2 decimal places) as a fallback if the raw amount fails
     const amountNum = parseFloat(amount);
     if (!isNaN(amountNum)) {
       const normalizedAmount = amountNum.toFixed(2);
@@ -292,7 +560,6 @@ export class PayUGateway implements IPaymentGateway {
       }
     }
 
-    // Prepend additional_charges if present
     const finalCandidates = [...candidateStrings];
     if (additional_charges) {
       candidateStrings.forEach((c) => finalCandidates.push(`${additional_charges}|${c}`));
@@ -318,13 +585,8 @@ export class PayUGateway implements IPaymentGateway {
     }
   }
 
-  /**
-   * Step 1.6: Verify the payment via Reconciliation API (v3 Transaction API)
-   * This is the "Source of Truth" to verify if a payment actually happened.
-   */
   async verifyPaymentReconciliation(txnid: string): Promise<ReconciliationResult> {
     const command = 'verify_payment';
-    // Formula: sha512(key|command|var1|salt)
     const hashString = `${this.key}|${command}|${txnid}|${this.salt}`;
     const hash = crypto.createHash('sha512').update(hashString).digest('hex');
 
@@ -353,7 +615,6 @@ export class PayUGateway implements IPaymentGateway {
 
       const data = await response.json();
 
-      // PayU Test environment often returns status: 0 for unknown txns
       if (data.status === 0 && process.env.NODE_ENV !== 'production') {
         console.warn(
           `[PAYU] Reconciliation returned status 0 (Transaction not found). This is expected if you haven't actually paid on the PayU page yet.`
@@ -367,6 +628,7 @@ export class PayUGateway implements IPaymentGateway {
     }
   }
 }
+*/
 
 /**
  * Mock Razorpay Implementation
@@ -453,7 +715,8 @@ export class PaymentService {
   static getGateway(gatewayName: string): IPaymentGateway {
     switch (gatewayName.toUpperCase()) {
       case 'PAYU':
-        return new PayUGateway();
+      case 'PAYU_V2':
+        return new PayUV2Gateway();
       case 'RAZORPAY':
         return new RazorpayGateway();
       case 'COD':
