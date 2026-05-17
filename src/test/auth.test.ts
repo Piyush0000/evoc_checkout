@@ -8,7 +8,10 @@ vi.mock('../services/otp.service.js', () => {
   return {
     OtpService: {
       sanitizePhone: vi.fn().mockImplementation((phone: string) => phone),
-      sendOtp: vi.fn().mockResolvedValue('mock_provider_session_id'),
+      sendOtp: vi.fn().mockResolvedValue({
+        providerSessionId: 'mock_provider_session_id',
+        isMock: true,
+      }),
       verifyOtp: vi.fn().mockImplementation(async (_phone: string, code: string) => {
         return code === '123456'; // Only '123456' works in our tests
       }),

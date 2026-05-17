@@ -43,14 +43,14 @@ export const sendOtp = async (req: Request, res: Response): Promise<void> => {
     }
 
     // 1. Call 2Factor API
-    const providerSessionId = await OtpService.sendOtp(phone);
+    const { providerSessionId, isMock } = await OtpService.sendOtp(phone);
     // Use the central sanitization for DB consistency
     const dbPhone = OtpService.sanitizePhone(phone);
     const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes expiry
 
     // 2. Save the external session ID to our DB
     console.info(
-      `[DEBUG] Saving OTP verification: phone=${dbPhone}, sessionId=${sessionId}, providerSessionId=${providerSessionId}`
+      `[DEBUG] Saving OTP verification: phone=${dbPhone}, sessionId=${sessionId}, providerSessionId=${providerSessionId}, isMock=${isMock}`
     );
     await safePrisma(() =>
       prisma.otpVerification.create({
@@ -66,6 +66,7 @@ export const sendOtp = async (req: Request, res: Response): Promise<void> => {
     res.status(200).json({
       success: true,
       message: 'OTP sent successfully',
+      isMock, // Return this so testers can validate in real-time
     });
   } catch (error: unknown) {
     if (error instanceof ZodError) {

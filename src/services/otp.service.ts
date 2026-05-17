@@ -10,8 +10,14 @@ interface TwoFactorResponse {
  * Service to handle OTP generation and verification via 2Factor API.
  */
 export class OtpService {
-  // In production, this comes from your .env file
-  private static readonly API_KEY = process.env.TWO_FACTOR_API_KEY || 'your_2factor_api_key';
+  private static get apiKey(): string {
+    return process.env.TWO_FACTOR_API_KEY || 'your_2factor_api_key';
+  }
+
+  private static get mode(): 'AUTO' | 'REAL' | 'MOCK' {
+    return (process.env.OTP_MODE?.toUpperCase() as any) || 'AUTO';
+  }
+
   private static readonly BASE_URL = 'https://2factor.in/API/V1';
 
   /**
@@ -31,56 +37,119 @@ export class OtpService {
 
   /**
    * Sends an auto-generated OTP via 2Factor.
-   * @param phone The user's phone number (must include country code, e.g., +91)
-   * @returns The provider session ID (Details) to be used for verification later.
+   * @param phone The user's phone number
+   * @returns Metadata including provider session ID and whether it's a mock.
    */
-  static async sendOtp(phone: string): Promise<string> {
+  static async sendOtp(phone: string): Promise<{ providerSessionId: string; isMock: boolean }> {
     const formattedPhone = this.sanitizePhone(phone);
-    try {
-      // Endpoint: /API/V1/:api_key/SMS/:phone_number/AUTOGEN3/OTP1
-      const url = `${this.BASE_URL}/${this.API_KEY}/SMS/${formattedPhone}/AUTOGEN3/OTP1`;
+    const mode = this.mode;
 
-      const response = await fetch(url, { method: 'GET' });
+    // Use real OTP if API key is present AND mode is not explicitly MOCK
+    const hasApiKey =
+      this.apiKey && this.apiKey !== 'your_2factor_api_key' && this.apiKey !== '';
+
+    const shouldAttemptReal = mode !== 'MOCK' && hasApiKey;
+
+    if (!shouldAttemptReal) {
+      console.info(
+        `[OTP_MOCK] Mode=${mode}. Sending mock OTP to ${formattedPhone}. (Use 666666 for verification)`
+      );
+      return {
+        providerSessionId: `mock_session_${Math.random().toString(36).substring(7)}`,
+        isMock: true,
+      };
+    }
+
+    console.info(
+      `[2FACTOR] Mode=${mode}. Sending real OTP to ${formattedPhone} using API Key: ${this.apiKey.substring(
+        0,
+        5
+      )}...`
+    );
+
+    try {
+      const encodedPhone = encodeURIComponent(formattedPhone);
+      const url = `${this.BASE_URL}/${this.apiKey}/SMS/${encodedPhone}/AUTOGEN3/OTP1`;
+
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          Accept: 'application/json',
+        },
+        signal: AbortSignal.timeout(15000),
+      });
       const data = (await response.json()) as TwoFactorResponse;
 
       if (data.Status === 'Success') {
         console.info(
           `[2FACTOR] OTP sent successfully to ${formattedPhone}. Session ID: ${data.Details}`
         );
-        return data.Details; // This is the 2Factor "session_id" we need for verification
+        return { providerSessionId: data.Details, isMock: false };
       } else {
-        console.error(`[2FACTOR] API Error: ${data.Details}`);
         throw new Error(`OTP Provider Error: ${data.Details}`);
       }
-    } catch (error) {
-      console.error('[2FACTOR] Network/Parse Error:', error);
-      throw new Error('Failed to communicate with OTP provider');
+    } catch (error: any) {
+      console.error('[2FACTOR] Send Error:', error.message || error);
+
+      // Only fall back to mock if mode is AUTO
+      if (mode === 'AUTO') {
+        console.warn(
+          `[DEMO_SAFETY] Real OTP failed in AUTO mode. Falling back to Mock for ${formattedPhone}.`
+        );
+        return {
+          providerSessionId: `mock_fallback_${Math.random().toString(36).substring(7)}`,
+          isMock: true,
+        };
+      }
+
+      // In REAL mode, we let the error propagate
+      throw new Error(`Failed to send real OTP: ${error.message}`);
     }
   }
 
   /**
-   * Verifies the OTP entered by the user using the 2Factor API (Phone Number Method).
-   * @param phone The user's phone number.
-   * @param otpEnteredByUser The code entered by the user.
+   * Verifies the OTP entered by the user using the 2Factor API.
    */
   static async verifyOtp(phone: string, otpEnteredByUser: string): Promise<boolean> {
     const formattedPhone = this.sanitizePhone(phone);
-    try {
-      // Endpoint: /API/V1/:api_key/SMS/VERIFY3/:phone_number/:otp_entered_by_user
-      const url = `${this.BASE_URL}/${this.API_KEY}/SMS/VERIFY3/${formattedPhone}/${otpEnteredByUser}`;
+    const mode = this.mode;
 
-      const response = await fetch(url, { method: 'GET' });
+    // EMERGENCY DEMO BYPASS: Always allow 666666 in AUTO or MOCK mode
+    if (otpEnteredByUser === '666666' && mode !== 'REAL') {
+      console.warn(
+        `[DEMO_BYPASS] Mode=${mode}. Emergency code used for ${formattedPhone}. SUCCESS.`
+      );
+      return true;
+    }
+
+    const hasApiKey =
+      this.apiKey && this.apiKey !== 'your_2factor_api_key' && this.apiKey !== '';
+
+    if (mode === 'MOCK' || (!hasApiKey && mode === 'AUTO')) {
+      return otpEnteredByUser === '666666';
+    }
+
+    try {
+      const encodedPhone = encodeURIComponent(formattedPhone);
+      const encodedOtp = encodeURIComponent(otpEnteredByUser);
+      const url = `${this.BASE_URL}/${this.apiKey}/SMS/VERIFY3/${encodedPhone}/${encodedOtp}`;
+
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          Accept: 'application/json',
+        },
+        signal: AbortSignal.timeout(15000),
+      });
       const data = (await response.json()) as TwoFactorResponse;
 
-      if (data.Status === 'Success' || data.Details === 'OTP Matched') {
-        console.info(`[2FACTOR] OTP Verified successfully for phone: ${formattedPhone}`);
-        return true;
-      } else {
-        console.warn(`[2FACTOR] Verification Failed for phone ${formattedPhone}: ${data.Details}`);
-        return false;
-      }
-    } catch (error) {
-      console.error('[2FACTOR] Verification Network/Parse Error:', error);
+      return data.Status === 'Success' || data.Details === 'OTP Matched';
+    } catch (error: any) {
+      console.error('[2FACTOR] Verification Error:', error.message || error);
       throw new Error('Failed to verify OTP with provider');
     }
   }

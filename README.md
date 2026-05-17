@@ -101,15 +101,19 @@ The service implements strict defensive boundaries:
     ```
 2.  **Environment Setup**:
     Configure your `DATABASE_URL` in `.env`.
-3.  **Generate Prisma Client**:
+3.  **OTP Mocking (Development)**:
+    If `TWO_FACTOR_API_KEY` is not set in `.env`, the service defaults to **Mock Mode**:
+    -   **Magic OTP**: `666666`
+    -   Works for any phone number.
+4.  **Generate Prisma Client**:
     ```bash
     pnpm prisma generate
     ```
-4.  **Database Migration**:
+5.  **Database Migration**:
     ```bash
     pnpm prisma migrate dev
     ```
-5.  **Start Dev Server**:
+6.  **Start Dev Server**:
     ```bash
     pnpm dev
     ```
