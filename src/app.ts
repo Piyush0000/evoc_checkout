@@ -32,10 +32,15 @@ if (!hasPayUKey || !hasPayUSalt) {
 const app: Express = express();
 
 // Security Middlewares
-app.use(helmet());
+app.use(helmet({
+  contentSecurityPolicy: false,
+}));
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Serve static frontend files
+app.use(express.static('frontend'));
 
 // Rate Limiting
 const limiter = rateLimit({

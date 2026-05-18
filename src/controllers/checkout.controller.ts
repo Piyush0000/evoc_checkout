@@ -50,8 +50,8 @@ export const initSession = async (req: Request, res: Response): Promise<void> =>
           totalAmount,
           currency: storeConfig.currency || 'INR',
           status: 'PENDING_AUTH',
-          successUrl,
-          cancelUrl,
+          successUrl: successUrl ?? null,
+          cancelUrl: cancelUrl ?? null,
           expiresAt: new Date(Date.now() + 10 * 60 * 1000), // 10 minutes expiry
         },
       })

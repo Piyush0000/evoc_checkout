@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Premium Checkout | Evoc Labs</title>
+  <!-- Google Fonts for premium typography -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- ================= CENTERED CHECKOUT CONTAINER ================= -->
+  <div class="checkout-wrapper">
+    <div class="checkout-panel centered">
+      
+      <!-- Top Header -->
+      <header class="checkout-header">
+        <div class="header-action-placeholder"></div>
+        <div class="brand-logo-container">
+          <img src="assets/evoc_logo.png" alt="Evoc Labs" class="brand-logo">
+        </div>
+        <div class="header-action-placeholder"></div>
+      </header>
+
+      <!-- Scrollable checkout content -->
+      <div class="checkout-content">
+
+        <!-- 1. Order Summary Card -->
+        <div class="checkout-card order-summary-card expanded">
+          <div class="card-header" id="toggleOrderSummary">
+            <div class="summary-info">
+              <span class="summary-title">Order summary <span class="item-count">(2 Items)</span></span>
+              <div class="summary-prices">
+                <span class="old-price">₹13,998.00</span>
+                <span class="new-price" id="summaryTotal">₹6,998.00</span>
+              </div>
+            </div>
+            <span class="toggle-icon">
+              <svg class="chevron-svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+            </span>
+          </div>
+
+          <!-- Collapsible Item List Drawer -->
+          <div class="order-items-drawer" id="orderDrawer">
+            <div class="drawer-inner">
+              <div class="cart-item-row" id="cartItem1">
+                <div class="item-image">
+                  <img src="assets/mockup1.png" alt="Juicer Mixer">
+                </div>
+                <div class="item-details">
+                  <h4 class="item-name">Moonstruck MegaMixer 1000W</h4>
+                  <div class="item-qty-control">
+                    <button class="qty-btn minus" onclick="updateQty(1, -1)">-</button>
+                    <span class="qty-val" id="qty1">2</span>
+                    <button class="qty-btn plus" onclick="updateQty(1, 1)">+</button>
+                  </div>
+                </div>
+                <div class="item-price-col">
+                  <span class="item-price">₹6,998.00</span>
+                  <button class="remove-btn" onclick="removeItem(1)" aria-label="Remove Item">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 2. Coupon Card -->
+        <div class="checkout-card coupon-card">
+          <div class="coupon-input-wrapper">
+            <span class="coupon-icon">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2e7d32" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path><line x1="7" y1="7" x2="7.01" y2="7"></line></svg>
+            </span>
+            <input type="text" id="couponCode" placeholder="Enter coupon code" class="coupon-input">
+            <button class="apply-btn" id="applyCouponBtn">Apply</button>
+          </div>
+          <div class="coupon-message" id="couponMessage"></div>
+        </div>
+
+        <!-- 3. Dynamic Workflow Step -->
+        <div class="workflow-container">
+
+          <!-- ================= STEP A: MOBILE NUMBER ================= -->
+          <div class="checkout-card workflow-card active" id="stepMobile">
+            <div class="workflow-card-header">
+              <h3 class="workflow-title">Enter mobile number</h3>
+              <p class="workflow-subtitle">Provide your mobile number to continue</p>
+            </div>
+
+            <div class="mobile-input-container">
+              <div class="country-picker">
+                <span class="flag-icon">🇮🇳</span>
+                <span class="dial-code">+91</span>
+              </div>
+              <input type="tel" id="mobileNumber" placeholder="10-digit mobile number" maxlength="10" class="tel-input">
+            </div>
+
+            <div class="error-text" id="mobileError"></div>
+
+            <button class="btn btn-primary action-btn mt-10" id="sendOtpBtn">
+              <span>Proceed to Verify</span>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
+            </button>
+          </div>
+
+          <!-- ================= STEP B: OTP VERIFICATION ================= -->
+          <div class="checkout-card workflow-card" id="stepOtp">
+            <div class="workflow-card-header">
+              <h3 class="workflow-title">Verify mobile number</h3>
+              <p class="workflow-subtitle">Enter the 6-digit OTP sent to <strong id="displayMobile">+91 99999 99999</strong></p>
+            </div>
+
+            <div class="otp-input-container">
+              <input type="text" class="otp-box" maxlength="1" pattern="[0-9]*" inputmode="numeric">
+              <input type="text" class="otp-box" maxlength="1" pattern="[0-9]*" inputmode="numeric">
+              <input type="text" class="otp-box" maxlength="1" pattern="[0-9]*" inputmode="numeric">
+              <input type="text" class="otp-box" maxlength="1" pattern="[0-9]*" inputmode="numeric">
+              <input type="text" class="otp-box" maxlength="1" pattern="[0-9]*" inputmode="numeric">
+              <input type="text" class="otp-box" maxlength="1" pattern="[0-9]*" inputmode="numeric">
+            </div>
+
+            <div class="error-text" id="otpError"></div>
+
+            <div class="otp-helper-row">
+              <span>Didn't receive OTP?</span>
+              <button class="resend-otp-btn" id="resendOtpBtn">Resend OTP</button>
+            </div>
+
+            <button class="btn btn-primary action-btn mt-15" id="verifyOtpBtn">
+              <span>Verify & Continue</span>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+            </button>
+            
+            <button class="btn btn-back mt-10" id="backToMobileBtn">Change Mobile Number</button>
+          </div>
+
+          <!-- ================= STEP C: DELIVERY DETAILS ================= -->
+          <div class="checkout-card workflow-card" id="stepAddress">
+            <div class="workflow-card-header-row">
+              <h3 class="workflow-title">Delivery details</h3>
+              <button class="change-action-link" id="editAddressBtn">Change</button>
+            </div>
+
+            <!-- Read-only Display Mode -->
+            <div class="address-display-mode" id="addressDisplayBox">
+              <h4 class="recipient-name" id="displayRecipient">Shreya</h4>
+              <p class="full-address-text" id="displayFullAddress">
+                N-422 aashiyana colony Kanpur Road Lucknow Near, bijnaur road, Lucknow, Uttar Pradesh, 226012
+              </p>
+              <div class="contact-details">
+                <span class="contact-item">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path></svg>
+                  <span id="displayPhone">8177013032</span>
+                </span>
+                <span class="contact-item">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>
+                  <span id="displayEmail">chauhanshreyasingh94@gmail.com</span>
+                </span>
+              </div>
+            </div>
+
+            <!-- Editable Form Mode -->
+            <div class="address-edit-mode hidden" id="addressEditForm">
+              <div class="form-grid">
+                <div class="form-group col-6">
+                  <label>First Name</label>
+                  <input type="text" id="addrFirstName" value="Shreya" class="form-input">
+                </div>
+                <div class="form-group col-6">
+                  <label>Last Name</label>
+                  <input type="text" id="addrLastName" value="Chauhan" class="form-input">
+                </div>
+                <div class="form-group col-12">
+                  <label>Flat, House No, Building</label>
+                  <input type="text" id="addrFlat" value="N-422, Aashiyana Colony" class="form-input">
+                </div>
+                <div class="form-group col-12">
+                  <label>Area, Street, Sector</label>
+                  <input type="text" id="addrArea" value="Kanpur Road, Near Bijnaur Road" class="form-input">
+                </div>
+                <div class="form-group col-6">
+                  <label>Pincode</label>
+                  <input type="text" id="addrPincode" value="226012" class="form-input">
+                </div>
+                <div class="form-group col-6">
+                  <label>City</label>
+                  <input type="text" id="addrCity" value="Lucknow" class="form-input">
+                </div>
+                <div class="form-group col-6">
+                  <label>State</label>
+                  <input type="text" id="addrState" value="Uttar Pradesh" class="form-input">
+                </div>
+                <div class="form-group col-6">
+                  <label>Email ID</label>
+                  <input type="email" id="addrEmail" value="chauhanshreyasingh94@gmail.com" class="form-input">
+                </div>
+              </div>
+              <button class="btn btn-secondary action-btn mt-10" id="saveAddressBtn">Save & Confirm</button>
+            </div>
+
+            <!-- Delivery Truck Promo -->
+            <div class="shipping-info-row">
+              <span class="delivery-truck">🚚</span>
+              <div>
+                <p class="delivery-text">Standard delivery: <strong id="deliveryDate">Thursday, May 21</strong></p>
+                <p class="delivery-promo">Free shipping for you</p>
+              </div>
+            </div>
+
+            <div class="error-text" id="addressError"></div>
+
+            <button class="btn btn-primary action-btn mt-15" id="confirmAddressBtn">
+              <span>Proceed to Payment</span>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
+            </button>
+          </div>
+
+          <!-- ================= STEP D: PAYMENT METHODS ================= -->
+          <div class="checkout-card workflow-card" id="stepPayment">
+            <div class="workflow-card-header">
+              <h3 class="workflow-title font-medium text-gray-800">Pay via</h3>
+            </div>
+
+            <div class="payment-methods-list">
+              
+              <!-- UPI Payment Option -->
+              <div class="payment-method-item upi-method active" id="methodUPI">
+                <div class="method-header">
+                  <div class="method-meta">
+                    <span class="method-icon">⚡</span>
+                    <span class="method-label">UPI payment</span>
+                  </div>
+                  <span class="method-price" id="upiPrice">₹6998.00</span>
+                  <span class="method-chevron">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="18 15 12 9 6 15"></polyline></svg>
+                  </span>
+                </div>
+                <div class="method-drawer" id="upiDrawer" style="display: block;">
+                  <p class="drawer-instruction">Scan the QR code & pay via any UPI app</p>
+                  <div class="qr-container">
+                    <div class="qr-code-wrapper">
+                      <!-- High fidelity QR mock -->
+                      <div class="qr-image-mock">
+                        <div class="qr-corners"></div>
+                        <div class="qr-dots-group"></div>
+                        <div class="qr-center-icon">
+                          <img src="assets/evoc_logo.png" alt="E">
+                        </div>
+                      </div>
+                    </div>
+                    <button class="btn btn-qr-action" id="simulateUpiBtn">Show QR</button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Partial COD Option -->
+              <div class="payment-method-item" id="methodCOD">
+                <div class="method-header">
+                  <div class="method-meta">
+                    <span class="method-icon">💵</span>
+                    <div>
+                      <span class="method-label">Partial COD</span>
+                      <span class="method-subtext">Pay Balance <strong class="text-blue">₹6918.00</strong> at Delivery</span>
+                    </div>
+                  </div>
+                  <span class="method-price">₹80.00</span>
+                  <span class="method-chevron">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                  </span>
+                </div>
+              </div>
+
+              <!-- Net Banking Option -->
+              <div class="payment-method-item" id="methodNetBanking">
+                <div class="method-header">
+                  <div class="method-meta">
+                    <span class="method-icon">🏦</span>
+                    <span class="method-label">Net Banking</span>
+                  </div>
+                  <span class="method-price">₹6998.00</span>
+                  <span class="method-chevron">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                  </span>
+                </div>
+              </div>
+
+              <!-- Wallets Option -->
+              <div class="payment-method-item" id="methodWallets">
+                <div class="method-header">
+                  <div class="method-meta">
+                    <span class="method-icon">💼</span>
+                    <span class="method-label">Wallets</span>
+                  </div>
+                  <span class="method-price">₹6998.00</span>
+                  <span class="method-chevron">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                  </span>
+                </div>
+              </div>
+
+              <!-- Credit/Debit Card Option -->
+              <div class="payment-method-item" id="methodCard">
+                <div class="method-header">
+                  <div class="method-meta">
+                    <span class="method-icon">💳</span>
+                    <span class="method-label">Credit/Debit Card</span>
+                  </div>
+                  <span class="method-price">₹6998.00</span>
+                  <span class="method-chevron">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                  </span>
+                </div>
+              </div>
+
+              <!-- Pay with EMI Option -->
+              <div class="payment-method-item" id="methodEMI">
+                <div class="method-header">
+                  <div class="method-meta">
+                    <span class="method-icon">🕒</span>
+                    <span class="method-label">Pay with EMI</span>
+                  </div>
+                  <span class="method-price">₹6998.00</span>
+                  <span class="method-chevron">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                  </span>
+                </div>
+              </div>
+
+            </div>
+
+            <div class="error-text" id="paymentError"></div>
+
+            <!-- Checkout Action Button -->
+            <button class="btn btn-primary action-btn mt-20 py-18" id="submitPaymentBtn">
+              <span>BUY NOW — <span id="paymentSubmitBtnTotal">₹6,998.00</span></span>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+            </button>
+          </div>
+
+          <!-- ================= SUCCESS SCREEN ================= -->
+          <div class="checkout-card workflow-card" id="stepSuccess">
+            <div class="success-illustration">
+              <div class="checkmark-circle">
+                <div class="checkmark"></div>
+              </div>
+            </div>
+            <h3 class="workflow-title text-center text-green mt-15">Order Placed Successfully!</h3>
+            <p class="workflow-subtitle text-center mb-20">
+              Thank you for shopping with us. Your checkout transaction is complete.
+            </p>
+            
+            <div class="order-receipt">
+              <div class="receipt-row">
+                <span class="label">Session ID:</span>
+                <span class="value code" id="receiptSessionId">---</span>
+              </div>
+              <div class="receipt-row">
+                <span class="label">Order Status:</span>
+                <span class="value text-green" id="receiptStatus">COMPLETED</span>
+              </div>
+              <div class="receipt-row">
+                <span class="label">Amount Paid:</span>
+                <span class="value text-bold" id="receiptAmount">₹6,998.00</span>
+              </div>
+            </div>
+
+            <button class="btn btn-primary action-btn mt-20" id="resetCheckoutBtn">
+              <span>Back to Start</span>
+            </button>
+          </div>
+
+        </div>
+
+      </div>
+
+      <!-- Trust Badges -->
+      <div class="trust-badges-footer">
+        <div class="badge-item">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path><path d="m9 12 2 2 4-4"></path></svg>
+          <span>PCI DSS certified</span>
+        </div>
+        <div class="badge-item">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+          <span>Secure payments</span>
+        </div>
+        <div class="badge-item">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="3" width="15" height="13"></rect><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"></polygon><circle cx="5.5" cy="18.5" r="2.5"></circle><circle cx="18.5" cy="18.5" r="2.5"></circle></svg>
+          <span>Assured delivery</span>
+        </div>
+        <div class="badge-item">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+          <span>Verified seller</span>
+        </div>
+      </div>
+
+      <!-- Legal & Powered By Evoc Labs Footer -->
+      <footer class="checkout-footer">
+        <div class="footer-links">
+          <a href="#">T&C</a>
+          <span>|</span>
+          <a href="#">Privacy Policy</a>
+          <span>|</span>
+          <span class="session-id-text" id="footerSessionId">Session: Pending</span>
+        </div>
+        <div class="powered-by">
+          <span>Powered By</span>
+          <img src="assets/evoc_logo.png" alt="Evoc Labs" class="footer-logo">
+        </div>
+      </footer>
+
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
