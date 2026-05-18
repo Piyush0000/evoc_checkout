@@ -47,7 +47,10 @@ document.addEventListener('DOMContentLoaded', () => {
 // Setup Event Handlers
 function setupEventListeners() {
   // Accordion summary expand/collapse
-  document.getElementById('toggleOrderSummary').addEventListener('click', toggleOrderSummaryDrawer);
+  const toggleBtn = document.getElementById('toggleOrderSummary');
+  if (toggleBtn) {
+    toggleBtn.addEventListener('click', toggleOrderSummaryDrawer);
+  }
 
   // Coupon code logic
   document.getElementById('applyCouponBtn').addEventListener('click', applyCouponCode);
@@ -71,17 +74,48 @@ function setupEventListeners() {
   document.getElementById('simulateUpiBtn').addEventListener('click', simulateUpiSuccessPayment);
 
   // Reset Success state back to start
-  document.getElementById('resetCheckoutBtn').addEventListener('click', () => {
-    sessionId = null;
-    appliedCoupon = null;
-    discountAmount = 0;
-    recalculateCart();
-    transitionToStep('mobile');
-    document.getElementById('mobileNumber').value = '';
-    document.querySelectorAll('.otp-box').forEach(box => box.value = '');
-    initCheckoutSession();
-  });
+  const resetBtn = document.getElementById('resetCheckoutBtn');
+  if (resetBtn) {
+    resetBtn.addEventListener('click', resetCheckoutWorkflow);
+  }
 }
+
+// Global robust workflow reset function
+function resetCheckoutWorkflow() {
+  console.log('[DEBUG] resetCheckoutWorkflow triggered');
+  sessionId = null;
+  appliedCoupon = null;
+  discountAmount = 0;
+  
+  // Restore default cart items if list was cleared
+  cartItems = [
+    { id: 1, name: "Moonstruck MegaMixer 1000W", price: 3499.00, qty: 2, originalPrice: 6999.00 }
+  ];
+  
+  try {
+    recalculateCart();
+  } catch (e) {
+    console.error('Failed to recalculate cart:', e);
+  }
+  
+  transitionToStep('mobile');
+  
+  const mobileInput = document.getElementById('mobileNumber');
+  if (mobileInput) {
+    mobileInput.value = '';
+  }
+  
+  document.querySelectorAll('.otp-box').forEach(box => {
+    box.value = '';
+  });
+  
+  try {
+    initCheckoutSession();
+  } catch (e) {
+    console.error('Failed to re-initialize session:', e);
+  }
+}
+window.resetCheckoutWorkflow = resetCheckoutWorkflow;
 
 // Initialize session with backend API (matching CreateSessionSchema exactly!)
 async function initCheckoutSession() {
@@ -140,9 +174,13 @@ function updateSessionDisplay(id) {
 // 2. ORDER SUMMARY & CART INTERACTIVITY
 // ==========================================================================
 function toggleOrderSummaryDrawer() {
+  console.log('[DEBUG] toggleOrderSummaryDrawer triggered');
   const summaryCard = document.querySelector('.order-summary-card');
-  summaryCard.classList.toggle('expanded');
+  if (summaryCard) {
+    summaryCard.classList.toggle('expanded');
+  }
 }
+window.toggleOrderSummaryDrawer = toggleOrderSummaryDrawer;
 
 // Change Quantity handler
 function updateQty(itemId, delta) {
@@ -218,6 +256,16 @@ function recalculateCart() {
   });
 
   document.getElementById('paymentSubmitBtnTotal').textContent = formattedFinal;
+  updateUpiQrCode();
+}
+
+// Dynamically generate fully-active scannable UPI QR code via Google Charts API
+function updateUpiQrCode() {
+  const realQrImg = document.getElementById('realUpiQr');
+  if (realQrImg) {
+    const upiUrl = `upi://pay?pa=evoclabs@oksbi&pn=Evoc%20Labs&am=${finalTotal.toFixed(2)}&cu=INR`;
+    realQrImg.src = `https://chart.googleapis.com/chart?chs=180x180&cht=qr&chl=${encodeURIComponent(upiUrl)}`;
+  }
 }
 
 // ==========================================================================

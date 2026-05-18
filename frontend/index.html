@@ -30,7 +30,7 @@
 
         <!-- 1. Order Summary Card -->
         <div class="checkout-card order-summary-card expanded">
-          <div class="card-header" id="toggleOrderSummary">
+          <div class="card-header" id="toggleOrderSummary" onclick="toggleOrderSummaryDrawer()">
             <div class="summary-info">
               <span class="summary-title">Order summary <span class="item-count">(2 Items)</span></span>
               <div class="summary-prices">
@@ -242,17 +242,10 @@
                 <div class="method-drawer" id="upiDrawer" style="display: block;">
                   <p class="drawer-instruction">Scan the QR code & pay via any UPI app</p>
                   <div class="qr-container">
-                    <div class="qr-code-wrapper">
-                      <!-- High fidelity QR mock -->
-                      <div class="qr-image-mock">
-                        <div class="qr-corners"></div>
-                        <div class="qr-dots-group"></div>
-                        <div class="qr-center-icon">
-                          <img src="assets/evoc_logo.png" alt="E">
-                        </div>
-                      </div>
-                    </div>
-                    <button class="btn btn-qr-action" id="simulateUpiBtn">Show QR</button>
+                     <div class="qr-code-wrapper" style="background: white; padding: 12px; border-radius: 12px; display: inline-block;">
+                       <img id="realUpiQr" src="https://chart.googleapis.com/chart?chs=180x180&cht=qr&chl=upi%3A%2F%2Fpay%3Fpa%3Devoclabs%40oksbi%26pn%3DEvoc%2520Labs%26am%3D6998.00%26cu%3DINR" alt="UPI QR Code" style="width: 150px; height: 150px; display: block; margin: 0 auto; object-fit: contain;">
+                     </div>
+                     <button class="btn btn-qr-action" id="simulateUpiBtn" style="margin-top: 10px;">Simulate Pay</button>
                   </div>
                 </div>
               </div>
@@ -368,7 +361,7 @@
               </div>
             </div>
 
-            <button class="btn btn-primary action-btn mt-20" id="resetCheckoutBtn">
+            <button class="btn btn-primary action-btn mt-20" id="resetCheckoutBtn" onclick="resetCheckoutWorkflow()">
               <span>Back to Start</span>
             </button>
           </div>
