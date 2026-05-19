@@ -13,7 +13,7 @@ vi.mock('../services/otp.service.js', () => {
         isMock: true,
       }),
       verifyOtp: vi.fn().mockImplementation(async (_phone: string, code: string) => {
-        return code === '123456'; // Only '123456' works in our tests
+        return code === '1234'; // Only '1234' works in our tests
       }),
     },
   };
@@ -76,14 +76,14 @@ describe('OTP Authentication Integration Tests', () => {
       sessionId,
     });
 
-    // 2. Verify OTP (using the mocked '123456' valid code)
+    // 2. Verify OTP (using the mocked '1234' valid code)
     const verifyResponse = await request(app)
       .post('/api/v1/auth/otp/verify')
       .set('x-store-id', storeId)
       .send({
         phone,
         sessionId,
-        code: '123456',
+        code: '1234',
       });
 
     expect(verifyResponse.status).toBe(200);

@@ -131,6 +131,13 @@ export const updateProfile = async (req: Request, res: Response): Promise<void> 
         }
 
         if (email) {
+          // Check if email is being taken by another user
+          const existingUser = await tx.user.findFirst({
+            where: { email, id: { not: session.userId as string } },
+          });
+          if (existingUser) {
+            throw new Error('EMAIL_CONFLICT');
+          }
           await tx.user.update({
             where: { id: session.userId as string },
             data: { email },
@@ -148,8 +155,14 @@ export const updateProfile = async (req: Request, res: Response): Promise<void> 
         return updated;
       })
     ).catch(err => {
+      // Re-throw known business logic errors
       if (err.message === 'UNAUTHORIZED_ADDRESS' || err.message === 'ADDRESS_REQUIRED') {
         throw err;
+      }
+      // Handle Prisma P2002 (unique constraint) - likely from email update on line 134
+      const prismaErr = err as { code?: string; meta?: { target?: string[] } };
+      if (prismaErr.code === 'P2002' && prismaErr.meta?.target?.includes('email')) {
+        throw new Error('EMAIL_CONFLICT');
       }
       console.warn('[DATABASE_FALLBACK] Database offline, simulating address and profile update success.', err.message || err);
       return {
@@ -178,6 +191,11 @@ export const updateProfile = async (req: Request, res: Response): Promise<void> 
 
     if (error instanceof Error && error.message === 'ADDRESS_REQUIRED') {
       res.status(400).json({ success: false, message: 'Address is required' });
+      return;
+    }
+
+    if (error instanceof Error && error.message === 'EMAIL_CONFLICT') {
+      res.status(409).json({ success: false, message: 'This email is already associated with another account' });
       return;
     }
 

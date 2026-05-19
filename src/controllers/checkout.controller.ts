@@ -135,6 +135,12 @@ export const getSessionSummary = async (req: Request, res: Response): Promise<vo
       return;
     }
 
+    // Check if session is expired
+    if (session.expiresAt < new Date()) {
+      res.status(410).json({ success: false, message: 'Checkout session has expired' });
+      return;
+    }
+
     // Tenant Isolation Check
     if (session.storeId !== storeIdFromHeader) {
       res.status(403).json({ success: false, message: 'Unauthorized' });
@@ -158,6 +164,7 @@ export const getSessionSummary = async (req: Request, res: Response): Promise<vo
           ? {
               id: session.user.id,
               phone: session.user.phone,
+              email: session.user.email,
               firstName: session.user.firstName,
               lastName: session.user.lastName,
               addresses: session.user.addresses,
@@ -268,19 +275,47 @@ export const finalizeSession = async (req: Request, res: Response): Promise<void
     // 4. Fetch latest Merchant Config to get Gateway Strategy
     const storeConfig = await MerchantService.getStoreConfig(session.storeId);
 
-    // Find the specific gateway config or fallback
+    // SDK Gateway Name Map — normalizes merchant-config names to internal keys
+    const GATEWAY_NAME_MAP: Record<string, string> = {
+      'PAYU': 'PAYU_V2',
+      'PAYU_V2': 'PAYU_V2',
+      'PAYU_V1': 'PAYU_V2',
+      'COD': 'COD',
+      'RAZORPAY': 'RAZORPAY',
+      'RAZORPAY_UPI': 'RAZORPAY',
+      'UPI': 'RAZORPAY',
+    };
+
+    // Normalize paymentMethod to internal key first
+    const paymentMethodKey = GATEWAY_NAME_MAP[paymentMethod.toUpperCase()] || paymentMethod.toUpperCase();
+
+    // Find matching gateway config (check both raw name and mapped name)
     const gatewayConfig =
       storeConfig.enabledGateways.find(
-        (g) => g.name.toUpperCase() === paymentMethod.toUpperCase()
-      ) || storeConfig.enabledGateways[0];
+        (g) =>
+          g.name.toUpperCase() === paymentMethod.toUpperCase() ||
+          GATEWAY_NAME_MAP[g.name.toUpperCase()] === paymentMethodKey
+      );
 
-    if (!gatewayConfig) {
+    // Don't blindly fall back to first gateway - default to PAYU_V2 if no match
+    const finalGatewayConfig = gatewayConfig || storeConfig.enabledGateways.find(
+      (g) => GATEWAY_NAME_MAP[g.name.toUpperCase()] === 'PAYU_V2'
+    );
+
+    if (!finalGatewayConfig) {
       res.status(400).json({
         success: false,
-        message: 'No payment gateways are currently enabled for this store',
+        message: 'No supported payment gateway is configured for this store',
       });
       return;
     }
+
+    // Normalize gateway name for SDK compatibility
+    const internalGatewayKey = GATEWAY_NAME_MAP[finalGatewayConfig.name.toUpperCase()] || 'PAYU_V2';
+    console.info(`[FINALIZE] Gateway mapping: "${finalGatewayConfig.name}" → "${internalGatewayKey}"`);
+
+    // Use finalGatewayConfig throughout
+    const _gatewayConfig = finalGatewayConfig;
 
     // 5. Prepare metadata for Gateway
     const customer = {
@@ -382,7 +417,7 @@ export const finalizeSession = async (req: Request, res: Response): Promise<void
     const claim = await safePrisma(() =>
       prisma.checkoutSession.updateMany({
         where: { id: sessionId as string, status: 'ADDRESS_CONFIRMED' },
-        data: { status: 'PAYMENT_PENDING', paymentGateway: gatewayConfig.name },
+        data: { status: 'PAYMENT_PENDING', paymentGateway: _gatewayConfig.name },
       })
     ).catch(_err => {
       console.warn('[DATABASE_FALLBACK] Database offline, pretending claim was won.');
@@ -399,9 +434,10 @@ export const finalizeSession = async (req: Request, res: Response): Promise<void
 
     // 7. Create the Payment Intent. If this throws, roll the session back so
     // the user can retry without being stuck in PAYMENT_PENDING.
-    const gateway = PaymentService.getGateway(gatewayConfig.name);
+    const gateway = PaymentService.getGateway(internalGatewayKey);
     let intent;
     try {
+      console.info(`[FINALIZE] Using gateway: ${internalGatewayKey} (from config: ${_gatewayConfig.name}) for session ${sessionId}`);
       intent = await gateway.createIntent(
         session.totalAmount,
         session.currency,
@@ -409,7 +445,9 @@ export const finalizeSession = async (req: Request, res: Response): Promise<void
         productInfo,
         paymentMethod
       );
+      console.info(`[FINALIZE] Intent result: status=${intent.status}, paymentUrl=${intent.paymentUrl || 'none'}`);
     } catch (gatewayError) {
+      console.error('[FINALIZE] Gateway error:', gatewayError);
       await safePrisma(() =>
         prisma.checkoutSession.update({
           where: { id: sessionId as string },
@@ -444,7 +482,7 @@ export const finalizeSession = async (req: Request, res: Response): Promise<void
               currency: sessionUpdate.currency,
               status: 'PENDING', // COD payment is pending until delivery
               paymentMethod: 'COD',
-              paymentGateway: gatewayConfig.name,
+              paymentGateway: _gatewayConfig.name,
               gatewayTransactionId: intent.id,
             },
           });
@@ -465,7 +503,7 @@ export const finalizeSession = async (req: Request, res: Response): Promise<void
         data: {
           sessionId: updatedSession.id,
           status: updatedSession.status,
-          paymentGateway: gatewayConfig.name,
+          paymentGateway: _gatewayConfig.name,
           gatewayTransactionId: intent.id,
           paymentMethod: 'COD',
         },
@@ -498,7 +536,7 @@ export const finalizeSession = async (req: Request, res: Response): Promise<void
             currency: sessionUpdate.currency,
             status: 'PENDING',
             paymentMethod: 'ONLINE',
-            paymentGateway: gatewayConfig.name,
+            paymentGateway: _gatewayConfig.name,
             gatewayTransactionId: intent.id,
           },
         });
@@ -527,11 +565,11 @@ export const finalizeSession = async (req: Request, res: Response): Promise<void
 
     res.status(200).json({
       success: true,
-      message: `Checkout finalized and ${gatewayConfig.name} intent created`,
+      message: `Checkout finalized and ${_gatewayConfig.name} intent created`,
       data: {
         sessionId: updatedSession.id,
         status: updatedSession.status,
-        paymentGateway: gatewayConfig.name,
+        paymentGateway: _gatewayConfig.name,
         gatewayTransactionId: intent.id,
         gatewayClientSecret: intent.clientSecret,
         paymentUrl: intent.paymentUrl,
@@ -789,7 +827,12 @@ export const handlePayUCallback = async (req: Request, res: Response): Promise<v
       );
     }
   } catch (error) {
-    console.error('[PAYU_CALLBACK] Error processing callback:', error);
+    const errorDetails = {
+      message: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+      name: error instanceof Error ? error.name : undefined,
+    };
+    console.error('[PAYU_CALLBACK] Error processing callback:', JSON.stringify(errorDetails, null, 2));
     res.redirect(`${defaultFrontendUrl}/checkout/failure?reason=internal_error`);
   }
 };

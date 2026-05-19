@@ -18,6 +18,23 @@ export class OtpService {
     return (process.env.OTP_MODE?.toUpperCase() as any) || 'AUTO';
   }
 
+  private static get isProduction(): boolean {
+    return process.env.NODE_ENV === 'production';
+  }
+
+  /**
+   * Determines if mock fallback is allowed.
+   * ONLY allowed in non-production environments (development/test).
+   */
+  private static get allowMockFallback(): boolean {
+    // REAL mode never allows mock
+    if (this.mode === 'REAL') return false;
+    // MOCK mode always uses mock (for testing)
+    if (this.mode === 'MOCK') return true;
+    // AUTO mode: only fallback to mock in non-production
+    return !this.isProduction;
+  }
+
   private static readonly BASE_URL = 'https://2factor.in/API/V1';
 
   /**
@@ -52,7 +69,7 @@ export class OtpService {
 
     if (!shouldAttemptReal) {
       console.info(
-        `[OTP_MOCK] Mode=${mode}. Sending mock OTP to ${formattedPhone}. (Use 666666 for verification)`
+        `[OTP_MOCK] Mode=${mode}. Sending mock OTP to ${formattedPhone}. (Use 6666 for verification)`
       );
       return {
         providerSessionId: `mock_session_${Math.random().toString(36).substring(7)}`,
@@ -93,10 +110,10 @@ export class OtpService {
     } catch (error: any) {
       console.error('[2FACTOR] Send Error:', error.message || error);
 
-      // Only fall back to mock if mode is AUTO
-      if (mode === 'AUTO') {
+      // Only fall back to mock if allowed AND mode is AUTO
+      if (this.allowMockFallback && mode === 'AUTO') {
         console.warn(
-          `[DEMO_SAFETY] Real OTP failed in AUTO mode. Falling back to Mock for ${formattedPhone}.`
+          `[DEMO_SAFETY] Real OTP failed in AUTO mode (non-prod). Falling back to Mock for ${formattedPhone}.`
         );
         return {
           providerSessionId: `mock_fallback_${Math.random().toString(36).substring(7)}`,
@@ -104,7 +121,7 @@ export class OtpService {
         };
       }
 
-      // In REAL mode, we let the error propagate
+      // In production or REAL mode, we let the error propagate — no bypass
       throw new Error(`Failed to send real OTP: ${error.message}`);
     }
   }
@@ -116,10 +133,10 @@ export class OtpService {
     const formattedPhone = this.sanitizePhone(phone);
     const mode = this.mode;
 
-    // EMERGENCY DEMO BYPASS: Always allow 666666 in AUTO or MOCK mode
-    if (otpEnteredByUser === '666666' && mode !== 'REAL') {
+    // EMERGENCY DEMO BYPASS: Allow 6666 ONLY in non-production with AUTO/MOCK mode
+    if (otpEnteredByUser === '6666' && this.allowMockFallback) {
       console.warn(
-        `[DEMO_BYPASS] Mode=${mode}. Emergency code used for ${formattedPhone}. SUCCESS.`
+        `[DEMO_BYPASS] Mode=${mode} (non-prod). Emergency code used for ${formattedPhone}. SUCCESS.`
       );
       return true;
     }
@@ -127,8 +144,13 @@ export class OtpService {
     const hasApiKey =
       this.apiKey && this.apiKey !== 'your_2factor_api_key' && this.apiKey !== '';
 
-    if (mode === 'MOCK' || (!hasApiKey && mode === 'AUTO')) {
-      return otpEnteredByUser === '666666';
+    if (mode === 'MOCK') {
+      return otpEnteredByUser === '6666';
+    }
+
+    // No API key in AUTO mode — only allow 6666 in non-production
+    if (!hasApiKey && mode === 'AUTO' && !this.isProduction) {
+      return otpEnteredByUser === '6666';
     }
 
     try {

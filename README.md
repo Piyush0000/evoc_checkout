@@ -62,7 +62,7 @@ src/
 
 | Method | Endpoint                  | Description                          |
 | :----- | :------------------------ | :----------------------------------- |
-| `POST` | `/api/v1/auth/otp/send`   | Request a 6-digit code for a session |
+| `POST` | `/api/v1/auth/otp/send`   | Request a 4-digit code for a session |
 | `POST` | `/api/v1/auth/otp/verify` | Verify OTP and create/link User      |
 
 ### User Profile
@@ -103,7 +103,7 @@ The service implements strict defensive boundaries:
     Configure your `DATABASE_URL` in `.env`.
 3.  **OTP Mocking (Development)**:
     If `TWO_FACTOR_API_KEY` is not set in `.env`, the service defaults to **Mock Mode**:
-    -   **Magic OTP**: `666666`
+    -   **Magic OTP**: `6666`
     -   Works for any phone number.
 4.  **Generate Prisma Client**:
     ```bash
