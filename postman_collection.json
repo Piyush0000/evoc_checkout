@@ -1,0 +1,366 @@
+{
+  "info": {
+    "name": "Evoc Checkout API - Full Workflow",
+    "description": "End-to-end checkout flow including PayU v2 payment. Run requests in order within each folder.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url", "value": "http://localhost:3000", "type": "string" },
+    { "key": "store_id", "value": "store_123", "type": "string" },
+    { "key": "session_id", "value": "", "type": "string" },
+    { "key": "phone", "value": "+919876543210", "type": "string" },
+    { "key": "txnid", "value": "", "type": "string" },
+    { "key": "saved_address_id", "value": "", "type": "string" },
+    { "key": "payu_key", "value": "T5c7MB", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "Scenario A: Fresh Customer (PayU v2)",
+      "description": "Full E2E flow for a brand new user using PayU v2 API-to-API integration.",
+      "item": [
+        {
+          "name": "Step 1 — Init Checkout",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.success) pm.collectionVariables.set('session_id', res.data.sessionId);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "x-store-id", "value": "{{store_id}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"items\": [{\"productId\": \"prod_WH_001\", \"sku\": \"SKU-WH-BK\", \"name\": \"Wireless Headphones (Black)\", \"price\": 4999, \"quantity\": 1}], \"currency\": \"INR\"}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/checkout/init",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "checkout", "init"]
+            }
+          }
+        },
+        {
+          "name": "Step 2a — Send OTP",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "x-store-id", "value": "{{store_id}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"phone\": \"{{phone}}\", \"sessionId\": \"{{session_id}}\"}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/otp/send",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "auth", "otp", "send"]
+            }
+          }
+        },
+        {
+          "name": "Step 2b — Verify OTP",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "x-store-id", "value": "{{store_id}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"phone\": \"{{phone}}\", \"sessionId\": \"{{session_id}}\", \"code\": \"123456\"}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/otp/verify",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "auth", "otp", "verify"]
+            }
+          }
+        },
+        {
+          "name": "Step 3 — Set Email & Address",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "x-store-id", "value": "{{store_id}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sessionId\": \"{{session_id}}\",\n  \"email\": \"customer@example.com\",\n  \"newAddress\": {\n    \"type\": \"HOME\",\n    \"firstName\": \"Test\",\n    \"lastName\": \"User\",\n    \"flatHouse\": \"123 App Sec\",\n    \"areaStreet\": \"Main Street\",\n    \"receiversPhone\": \"{{phone}}\",\n    \"city\": \"Bengaluru\",\n    \"state\": \"Karnataka\",\n    \"pincode\": \"560103\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/user/profile",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "user", "profile"]
+            }
+          }
+        },
+        {
+          "name": "Step 4 — Finalize (PayU v2)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const res = pm.response.json();",
+                  "pm.test('API-to-API Intent Success', () => {",
+                  "  pm.expect(res.data.paymentUrl).to.exist;",
+                  "  pm.expect(res.data.paymentGateway).to.eql('PayU');",
+                  "});",
+                  "if (res.success) pm.collectionVariables.set('txnid', res.data.gatewayTransactionId);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "x-store-id", "value": "{{store_id}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"sessionId\": \"{{session_id}}\", \"paymentMethod\": \"PayU\"}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/checkout/finalize",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "checkout", "finalize"]
+            }
+          }
+        },
+        {
+          "name": "Step 5 — Mock Webhook Success",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/x-www-form-urlencoded" }],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                { "key": "status", "value": "success" },
+                { "key": "txnid", "value": "{{txnid}}" },
+                { "key": "amount", "value": "4999.00" },
+                { "key": "productinfo", "value": "Wireless Headphones (Black)" },
+                { "key": "firstname", "value": "Test" },
+                { "key": "email", "value": "customer@example.com" },
+                { "key": "key", "value": "{{payu_key}}" },
+                { "key": "hash", "value": "MOCK_HASH_FOR_LOCAL_DEV" },
+                { "key": "mihpayid", "value": "postman_{{$timestamp}}" }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/checkout/payu/callback",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "checkout", "payu", "callback"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Scenario B: Repeating Customer",
+      "description": "Flow for returning user re-using existing address.",
+      "item": [
+        {
+          "name": "Step 1 — Init Checkout",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.success) pm.collectionVariables.set('session_id', res.data.sessionId);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "x-store-id", "value": "{{store_id}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"items\": [{\"productId\": \"prod_WH_001\", \"sku\": \"SKU-WH-BK\", \"name\": \"Wireless Headphones (Black)\", \"price\": 4999, \"quantity\": 1}], \"currency\": \"INR\"}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/checkout/init",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "checkout", "init"]
+            }
+          }
+        },
+        {
+          "name": "Step 2 — Verify OTP",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "x-store-id", "value": "{{store_id}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"phone\": \"{{phone}}\", \"sessionId\": \"{{session_id}}\", \"code\": \"123456\"}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/otp/verify",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "auth", "otp", "verify"]
+            }
+          }
+        },
+        {
+          "name": "Step 3 — Fetch & Select Saved Address",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.data.user && res.data.user.addresses.length > 0) {",
+                  "  pm.collectionVariables.set('saved_address_id', res.data.user.addresses[0].id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "x-store-id", "value": "{{store_id}}" }],
+            "url": {
+              "raw": "{{base_url}}/api/v1/checkout/summary/{{session_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "checkout", "summary", "{{session_id}}"]
+            }
+          }
+        },
+        {
+          "name": "Step 4 — Use Saved Address",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "x-store-id", "value": "{{store_id}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sessionId\": \"{{session_id}}\",\n  \"email\": \"divyansh@example.com\",\n  \"addressId\": \"{{saved_address_id}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/user/profile",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "user", "profile"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Scenario C: Cash on Delivery",
+      "description": "Standard COD flow.",
+      "item": [
+        {
+          "name": "Step 1 — Init & Set Address (Pincode: 560034)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "x-store-id", "value": "{{store_id}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"items\": [{\"productId\": \"prod_1\", \"sku\": \"S1\", \"name\": \"Shirt\", \"price\": 500, \"quantity\": 1}], \"currency\": \"INR\"}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/checkout/init",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "checkout", "init"]
+            }
+          }
+        },
+        {
+          "name": "Step 2 — Finalize (COD)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const res = pm.response.json();",
+                  "pm.test('COD immediate success', () => pm.expect(res.data.status).to.eql('COMPLETED'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "x-store-id", "value": "{{store_id}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"sessionId\": \"{{session_id}}\", \"paymentMethod\": \"COD\"}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/checkout/finalize",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "checkout", "finalize"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Edge Cases & Safety",
+      "item": [
+        {
+          "name": "Security: Hash Mismatch (Webhook)",
+          "request": {
+            "method": "POST",
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                { "key": "status", "value": "success" },
+                { "key": "txnid", "value": "fake_txn" },
+                { "key": "hash", "value": "invalid_signature" }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/checkout/payu/callback",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "checkout", "payu", "callback"]
+            }
+          }
+        },
+        {
+          "name": "Safety: Wrong Store ID Isolation",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "x-store-id", "value": "hacker_store" }],
+            "url": {
+              "raw": "{{base_url}}/api/v1/checkout/summary/{{session_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "checkout", "summary", "{{session_id}}"]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

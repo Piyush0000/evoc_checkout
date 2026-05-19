@@ -1,0 +1,131 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id               String            @id @default(uuid())
+  phone            String            @unique
+  email            String?           @unique
+  firstName        String?
+  lastName         String?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  addresses        Address[]
+  checkoutSessions CheckoutSession[]
+  transactions     Transaction[]
+}
+
+model Address {
+  id               String            @id @default(uuid())
+  userId           String
+  type             AddressType       @default(HOME)
+  firstName        String
+  lastName         String
+  flatHouse        String
+  areaStreet       String
+  landmark         String?
+  receiversPhone   String
+  city             String
+  state            String
+  pincode          String
+  isDefault        Boolean           @default(false)
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  user             User              @relation(fields: [userId], references: [id])
+  checkoutSessions CheckoutSession[]
+
+  @@index([userId])
+}
+
+model CheckoutSession {
+  id                   String        @id @default(uuid())
+  userId               String?
+  items                Json
+  totalAmount          Float
+  currency             String        @default("INR")
+  status               SessionStatus @default(PENDING_AUTH)
+  expiresAt            DateTime      @default(now())
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
+  addressId            String?
+  gatewayClientSecret  String?
+  gatewayTransactionId String?       @unique
+  gatewayPaymentId     String?
+  paymentGateway       String?
+  successUrl           String?
+  cancelUrl            String?
+  storeId              String
+  address              Address?      @relation(fields: [addressId], references: [id])
+  user                 User?         @relation(fields: [userId], references: [id])
+
+  @@index([storeId])
+  @@index([userId])
+  @@index([gatewayTransactionId])
+
+  transaction Transaction?
+}
+
+model Transaction {
+  id                   String            @id @default(uuid())
+  sessionId            String            @unique
+  storeId              String
+  userId               String?
+  amount               Float
+  currency             String            @default("INR")
+  status               TransactionStatus
+  paymentMethod        String            @default("ONLINE") // ONLINE, COD
+  paymentGateway       String?
+  gatewayTransactionId String?           @unique
+  gatewayPaymentId     String?
+  metadata             Json?
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
+
+  session CheckoutSession @relation(fields: [sessionId], references: [id])
+  user    User?           @relation(fields: [userId], references: [id])
+
+  @@index([storeId])
+  @@index([userId])
+  @@index([status])
+}
+
+model OtpVerification {
+  id                String   @id @default(uuid())
+  phone             String
+  code              String?
+  sessionId         String
+  expiresAt         DateTime
+  createdAt         DateTime @default(now())
+  providerSessionId String?
+
+  @@index([phone])
+}
+
+enum AddressType {
+  HOME
+  WORK
+  OTHER
+}
+
+enum SessionStatus {
+  PENDING_AUTH
+  AUTHENTICATED
+  ADDRESS_CONFIRMED
+  PAYMENT_PENDING
+  COMPLETED
+  PLACED // Specifically for COD or orders awaiting offline payment
+  FAILED
+  EXPIRED
+}
+
+enum TransactionStatus {
+  PENDING
+  SUCCESS
+  FAILED
+  REFUNDED
+}
