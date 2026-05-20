@@ -35,7 +35,14 @@ const app: Express = express();
 app.use(helmet({
   contentSecurityPolicy: false,
 }));
-app.use(cors());
+
+// CORS Configuration - allow cross-origin requests from merchant websites
+const corsOptions: cors.CorsOptions = {
+  origin: '*', // Allow all origins
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'x-store-id', 'Authorization'],
+};
+app.use(cors(corsOptions));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 

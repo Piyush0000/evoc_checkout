@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Evoc Checkout SDK Demo</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Outfit', sans-serif;
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+      min-height: 100vh;
+      padding: 40px 20px;
+    }
+    .demo-container {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    .demo-header {
+      text-align: center;
+      margin-bottom: 40px;
+    }
+    .demo-header h1 {
+      color: #fff;
+      font-size: 2.5rem;
+      font-weight: 800;
+      margin-bottom: 10px;
+    }
+    .demo-header p {
+      color: rgba(255,255,255,0.7);
+      font-size: 1.1rem;
+    }
+    .demo-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 40px;
+    }
+    @media (max-width: 900px) {
+      .demo-grid { grid-template-columns: 1fr; }
+    }
+    .demo-section {
+      background: rgba(255,255,255,0.05);
+      border-radius: 20px;
+      padding: 30px;
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255,255,255,0.1);
+    }
+    .demo-section h2 {
+      color: #fff;
+      font-size: 1.5rem;
+      margin-bottom: 20px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .demo-section h2 .badge {
+      background: #0288d1;
+      color: white;
+      font-size: 0.7rem;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-weight: 600;
+    }
+    .config-form {
+      display: flex;
+      flex-direction: column;
+      gap: 15px;
+    }
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+    .form-group label {
+      color: rgba(255,255,255,0.8);
+      font-size: 0.85rem;
+      font-weight: 600;
+    }
+    .form-group input, .form-group select {
+      background: rgba(255,255,255,0.1);
+      border: 1px solid rgba(255,255,255,0.2);
+      border-radius: 8px;
+      padding: 10px 14px;
+      color: #fff;
+      font-size: 0.95rem;
+      font-family: 'Outfit', sans-serif;
+      transition: all 0.3s ease;
+    }
+    .form-group input:focus, .form-group select:focus {
+      outline: none;
+      border-color: #0288d1;
+      background: rgba(255,255,255,0.15);
+    }
+    .form-group input::placeholder {
+      color: rgba(255,255,255,0.4);
+    }
+    .btn {
+      background: #0288d1;
+      color: white;
+      border: none;
+      border-radius: 10px;
+      padding: 14px 24px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      font-family: 'Outfit', sans-serif;
+    }
+    .btn:hover {
+      background: #0277bd;
+      transform: translateY(-2px);
+    }
+    .btn-secondary {
+      background: rgba(255,255,255,0.1);
+      border: 1px solid rgba(255,255,255,0.2);
+    }
+    .btn-secondary:hover {
+      background: rgba(255,255,255,0.2);
+    }
+    .btn-row {
+      display: flex;
+      gap: 10px;
+      margin-top: 10px;
+    }
+    #evoc-checkout {
+      width: 100%;
+      min-height: 600px;
+    }
+    .event-log {
+      background: rgba(0,0,0,0.3);
+      border-radius: 10px;
+      padding: 15px;
+      max-height: 300px;
+      overflow-y: auto;
+    }
+    .event-log h3 {
+      color: rgba(255,255,255,0.8);
+      font-size: 0.9rem;
+      margin-bottom: 10px;
+    }
+    .event-item {
+      background: rgba(255,255,255,0.05);
+      border-radius: 6px;
+      padding: 10px 12px;
+      margin-bottom: 8px;
+      font-size: 0.85rem;
+    }
+    .event-item.success { border-left: 3px solid #4caf50; }
+    .event-item.error { border-left: 3px solid #f44336; }
+    .event-item.info { border-left: 3px solid #2196f3; }
+    .event-item .event-name {
+      color: rgba(255,255,255,0.6);
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      margin-bottom: 4px;
+    }
+    .event-item .event-data {
+      color: #fff;
+      font-family: monospace;
+      word-break: break-all;
+    }
+    .code-snippet {
+      background: rgba(0,0,0,0.4);
+      border-radius: 10px;
+      padding: 20px;
+      margin-top: 20px;
+      overflow-x: auto;
+    }
+    .code-snippet pre {
+      color: #e0e0e0;
+      font-family: 'Fira Code', monospace;
+      font-size: 0.8rem;
+      line-height: 1.6;
+      margin: 0;
+    }
+    .code-snippet .keyword { color: #c792ea; }
+    .code-snippet .string { color: #c3e88d; }
+    .code-snippet .property { color: #82aaff; }
+    .code-snippet .function { color: #82aaff; }
+    .copy-btn {
+      position: relative;
+      float: right;
+      background: rgba(255,255,255,0.1);
+      border: none;
+      border-radius: 6px;
+      padding: 6px 12px;
+      color: rgba(255,255,255,0.7);
+      font-size: 0.75rem;
+      cursor: pointer;
+      transition: all 0.3s ease;
+    }
+    .copy-btn:hover {
+      background: rgba(255,255,255,0.2);
+      color: #fff;
+    }
+  </style>
+</head>
+<body>
+  <div class="demo-container">
+    <div class="demo-header">
+      <h1>Evoc Checkout SDK</h1>
+      <p>Embed a premium, production-ready checkout flow on any website</p>
+    </div>
+
+    <div class="demo-grid">
+      <!-- Configuration Panel -->
+      <div class="demo-section">
+        <h2>Configuration <span class="badge">SDK v1.0</span></h2>
+
+        <div class="config-form">
+          <div class="form-group">
+            <label>Store ID (required)</label>
+            <input type="text" id="cfg_storeId" value="store_123" placeholder="your_store_id">
+          </div>
+
+          <div class="form-group">
+            <label>API Base URL</label>
+            <input type="text" id="cfg_apiBaseUrl" value="/api/v1" placeholder="https://api.example.com/api/v1">
+          </div>
+
+          <div class="form-group">
+            <label>Total Amount (₹)</label>
+            <input type="number" id="cfg_amount" value="6998" placeholder="Total amount">
+          </div>
+
+          <div class="form-group">
+            <label>Merchant Name</label>
+            <input type="text" id="cfg_merchantName" value="TechGadgets Store" placeholder="Your Store Name">
+          </div>
+
+          <div class="form-group">
+            <label>UPI VPA (for QR)</label>
+            <input type="text" id="cfg_upiVpa" value="evoclabs@oksbi" placeholder="merchant@oksbi">
+          </div>
+
+          <div class="form-group">
+            <label>Theme</label>
+            <select id="cfg_theme">
+              <option value="light">Light</option>
+              <option value="dark">Dark (coming soon)</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="btn-row">
+          <button class="btn" id="btn_init">Initialize SDK</button>
+          <button class="btn btn-secondary" id="btn_destroy">Destroy</button>
+        </div>
+
+        <!-- Code Snippet -->
+        <div class="code-snippet">
+          <button class="copy-btn" onclick="copyCode()">Copy</button>
+          <pre id="codePreview"><span class="keyword">const</span> config = {
+  <span class="property">storeId</span>: <span class="string">'store_123'</span>,
+  <span class="property">amount</span>: <span class="string">6998</span>,
+  <span class="property">merchantName</span>: <span class="string">'TechGadgets'</span>,
+  <span class="property">onSuccess</span>: <span class="function">(order)</span> => console.log(order)
+};
+
+EVOC_CHECKOUT.<span class="function">init</span>(config);</pre>
+        </div>
+      </div>
+
+      <!-- Events & Logs -->
+      <div class="demo-section">
+        <h2>Event Log</h2>
+        <div class="event-log" id="eventLog">
+          <h3>Callback Events</h3>
+          <div id="eventsContainer">
+            <div class="event-item info">
+              <div class="event-name">Info</div>
+              <div class="event-data">Click "Initialize SDK" to start the demo</div>
+            </div>
+          </div>
+        </div>
+
+        <h2 style="margin-top: 30px;">Quick Setup</h2>
+        <p style="color: rgba(255,255,255,0.6); font-size: 0.9rem; margin-bottom: 15px;">
+          To use on your website, add the SDK script and a container element:
+        </p>
+        <div class="code-snippet">
+          <pre>&lt;<span class="keyword">script</span> <span class="property">src</span>=<span class="string">"evoc-checkout-sdk.js"</span>&gt;&lt;/<span class="keyword">script</span>&gt;
+
+&lt;<span class="keyword">div</span> <span class="property">id</span>=<span class="string">"evoc-checkout"</span>&gt;&lt;/<span class="keyword">div</span>&gt;
+
+&lt;<span class="keyword">script</span>&gt;
+  EVOC_CHECKOUT.<span class="function">init</span>({
+    <span class="property">storeId</span>: <span class="string">'your_store_id'</span>,
+    <span class="property">apiBaseUrl</span>: <span class="string">'https://your-api.com/api/v1'</span>,
+    <span class="property">amount</span>: <span class="string">4999</span>,
+    <span class="property">onSuccess</span>: <span class="function">(order)</span> => {
+      console.<span class="function">log</span>(<span class="string">'Order placed!'</span>, order);
+    }
+  });
+&lt;/<span class="keyword">script</span>&gt;</pre>
+        </div>
+      </div>
+    </div>
+
+    <!-- Checkout Widget Container -->
+    <div class="demo-section" style="margin-top: 40px;">
+      <h2>Live Preview</h2>
+      <div id="evoc-checkout">
+        <!-- SDK will render here -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Load the SDK -->
+  <script src="evoc-checkout-sdk.js"></script>
+
+  <script>
+    // Event logging helper
+    function logEvent(type, name, data) {
+      const container = document.getElementById('eventsContainer');
+      const event = document.createElement('div');
+      event.className = `event-item ${type}`;
+      event.innerHTML = `
+        <div class="event-name">${name}</div>
+        <div class="event-data">${typeof data === 'object' ? JSON.stringify(data, null, 2) : data}</div>
+      `;
+      container.insertBefore(event, container.firstChild);
+
+      // Keep only last 20 events
+      while (container.children.length > 20) {
+        container.removeChild(container.lastChild);
+      }
+    }
+
+    // Initialize SDK
+    function initSDK() {
+      const config = {
+        storeId: document.getElementById('cfg_storeId').value || 'store_123',
+        apiBaseUrl: document.getElementById('cfg_apiBaseUrl').value || '/api/v1',
+        amount: parseFloat(document.getElementById('cfg_amount').value) || 6998,
+        merchantName: document.getElementById('cfg_merchantName').value || 'Demo Store',
+        upiVpa: document.getElementById('cfg_upiVpa').value || 'evoclabs@oksbi',
+        currency: 'INR',
+        items: [
+          { id: 1, name: 'Premium Wireless Headphones', price: 3499, qty: 1, originalPrice: 6999 },
+          { id: 2, name: 'Smart Watch Pro', price: 3499, qty: 1, originalPrice: 6999 }
+        ],
+        callbacks: {
+          onSuccess: (order) => {
+            logEvent('success', 'onSuccess', order);
+          },
+          onFailure: (error) => {
+            logEvent('error', 'onFailure', error);
+          },
+          onClose: () => {
+            logEvent('info', 'onClose', 'Checkout reset/closed');
+          },
+          onStepChange: (step) => {
+            logEvent('info', 'onStepChange', step);
+          }
+        }
+      };
+
+      try {
+        EVOC_CHECKOUT.init(config);
+        logEvent('success', 'init', `SDK initialized with storeId: ${config.storeId}`);
+      } catch (e) {
+        logEvent('error', 'init', e.message);
+      }
+    }
+
+    // Destroy SDK
+    function destroySDK() {
+      EVOC_CHECKOUT.destroy();
+      logEvent('info', 'destroy', 'SDK instance destroyed');
+    }
+
+    // Update code preview
+    function updateCodePreview() {
+      const storeId = document.getElementById('cfg_storeId').value || 'store_123';
+      const amount = document.getElementById('cfg_amount').value || 6998;
+      const merchant = document.getElementById('cfg_merchantName').value || 'Your Store';
+
+      document.getElementById('codePreview').innerHTML = `<span class="keyword">const</span> config = {
+  <span class="property">storeId</span>: <span class="string">'${storeId}'</span>,
+  <span class="property">amount</span>: <span class="string">${amount}</span>,
+  <span class="property">merchantName</span>: <span class="string">'${merchant}'</span>,
+  <span class="property">onSuccess</span>: <span class="function">(order)</span> => console.log(order)
+};
+
+EVOC_CHECKOUT.<span class="function">init</span>(config);`;
+    }
+
+    // Copy code
+    function copyCode() {
+      const code = `const config = {
+  storeId: '${document.getElementById('cfg_storeId').value}',
+  apiBaseUrl: '${document.getElementById('cfg_apiBaseUrl').value}',
+  amount: ${document.getElementById('cfg_amount').value},
+  merchantName: '${document.getElementById('cfg_merchantName').value}',
+  upiVpa: '${document.getElementById('cfg_upiVpa').value}',
+  callbacks: {
+    onSuccess: (order) => console.log('Order placed!', order),
+    onFailure: (err) => console.log('Payment failed!', err),
+    onClose: () => console.log('Checkout closed')
+  }
+};
+
+EVOC_CHECKOUT.init(config);`;
+
+      navigator.clipboard.writeText(code).then(() => {
+        const btn = document.querySelector('.copy-btn');
+        btn.textContent = 'Copied!';
+        setTimeout(() => btn.textContent = 'Copy', 2000);
+      });
+    }
+
+    // Event listeners
+    document.getElementById('btn_init').addEventListener('click', initSDK);
+    document.getElementById('btn_destroy').addEventListener('click', destroySDK);
+
+    // Update code preview on input change
+    document.querySelectorAll('.config-form input').forEach(input => {
+      input.addEventListener('input', updateCodePreview);
+    });
+
+    // Auto-init on load
+    document.addEventListener('DOMContentLoaded', () => {
+      updateCodePreview();
+    });
+  </script>
+</body>
+</html>
